@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(64) NOT NULL
+);
+
+INSERT INTO users (name) VALUES ('alice');

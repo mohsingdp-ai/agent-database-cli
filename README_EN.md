@@ -65,11 +65,11 @@ Please read https://github.com/sleepinginsummer/database-cli/blob/main/AI_INSTAL
 ### Manual Global Installation
 
 ```bash
-npm install -g github:sleepinginsummer/database-cli
+npm install -g @sleepinsummer/database-cli
 database-cli --help
 ```
 
-If GitHub installation fails during the `prepare` phase on Windows or in a restricted npm environment, use the equivalent source installation flow:
+If npm package installation is restricted, use the equivalent source installation flow:
 
 ```powershell
 git clone https://github.com/sleepinginsummer/database-cli.git
@@ -164,7 +164,7 @@ SQLcl mode sends the connection script through stdin so the password does not ap
 ## Uninstall and Cleanup
 
 ```bash
-npm uninstall -g database-cli
+npm uninstall -g @sleepinsummer/database-cli
 npm cache clean --force
 rm -rf ~/.database-cli
 docker compose down

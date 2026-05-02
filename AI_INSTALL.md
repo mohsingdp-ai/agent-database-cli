@@ -5,11 +5,11 @@
 ## 1. 安装 CLI
 
 ```bash
-npm install -g github:sleepinginsummer/database-cli
+npm install -g @sleepinsummer/database-cli
 database-cli --help
 ```
 
-如果 Windows 或受限 npm 环境在 `prepare` 阶段安装失败，使用等价的源码安装方式：
+如果 npm 包安装受限，使用等价的源码安装方式：
 
 ```powershell
 git clone https://github.com/sleepinginsummer/database-cli.git

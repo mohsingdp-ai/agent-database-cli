@@ -11,7 +11,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License MIT">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
-  <img src="https://img.shields.io/badge/Windows-%EF%A3%BF%20macOS-0078D6?logo=windows&logoColor=white&labelColor=0078D6&color=C0C0C0" alt="Windows/macOS">
+  <img src="https://img.shields.io/badge/Windows-MacOS-0078D6?labelColor=0078D6&color=C0C0C0" alt="Windows/MacOS">
   <img src="https://img.shields.io/badge/release-v0.2.2-blue" alt="release v0.2.2">
 </p>
 

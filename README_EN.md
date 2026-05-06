@@ -2,7 +2,7 @@
 
 # database-cli
 
-A CLI-based multi-database tool that exposes database connections, query execution, metadata inspection, and connection reuse as local commands callable by agents.
+A CLI-based multi-database tool that packages common database connection, query, metadata inspection, and connection reuse capabilities as local commands callable by agents.
 
 MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command blocklist · SQLcl Oracle · Local daemon
 
@@ -15,7 +15,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
   <img src="https://img.shields.io/badge/release-v0.2.2-blue" alt="release v0.2.2">
 </p>
 
-[AI One-Click Installation](#ai-one-click-installation) · [Installation](#installation) · [Configuration](#configuration) · [Permission Configuration](#permission-configuration) · [Oracle SQLcl](#oracle-sqlcl) · [License](#license)
+[AI One-Click Installation](#ai-one-click-installation) · [Installation](#installation) · [Configuration](#configuration) · [Permission Configuration](#permission-configuration) · [Oracle SQLcl](#oracle-sqlcl) · [License](#license) · [Friendly Links](#friendly-links)
 
 [中文](README.md) | English
 
@@ -23,19 +23,19 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
 
 ## Introduction
 
-`database-cli` references the database adapter, config loading, safety checking, and connection management layers from [Anarkh-Lee/universal-db-mcp](https://github.com/Anarkh-Lee/universal-db-mcp), but rewrites them as a standalone CLI. It does not include MCP, HTTP, or SSE services.
+`database-cli` references the database adapter, config loading, safety checking, and connection management layering of [Anarkh-Lee/universal-db-mcp](https://github.com/Anarkh-Lee/universal-db-mcp), then rewrites it into a standalone CLI form without MCP, HTTP, or SSE services.
 
 What it can do:
 
 - List currently supported database types and locally configured connections
-- Execute SQL, Redis commands, or MongoDB JSON commands against a configured database
-- Inspect database metadata such as tables, columns, collections, and Redis keys
+- Execute SQL, Redis commands, or MongoDB JSON commands against a specified database
+- Query database metadata such as tables, columns, collections, and Redis keys
 - Enable read-only mode and command blocklists per database configuration
 - Auto-start the local daemon on demand; the daemon exits after `300` idle seconds by default
-- Keep connections through the local daemon; each database connection is released after `180` idle seconds by default
-- Switch Oracle between `oracledb` and SQLcl connection modes
-- It does not store or print unmasked passwords, tokens, or secrets
-- The daemon uses named pipes on Windows and Unix sockets on macOS/Linux
+- Keep connections alive through the local daemon; each database connection is released after `180` idle seconds by default
+- Switch Oracle between `oracledb` and SQLcl drivers
+- Never store or print unmasked passwords, tokens, or secrets
+- Use named pipes on Windows and Unix sockets on macOS/Linux for the daemon
 
 Driver configuration table:
 
@@ -44,8 +44,8 @@ Driver configuration table:
 | MySQL | `mysql` | npm package `mysql2` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
 | PostgreSQL | `postgres` | npm package `pg` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
 | Redis | `redis` | npm package `redis` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Oracle | `oracle` | npm package `oracledb` | `oracleDriver: "oracledb" \| "sqlcl"`; SQLcl mode can set `sqlclPath` and `javaHome`. SQLcl is recommended for older Oracle versions | `readonly`, `blacklist`, `keepAliveSeconds` |
-| MongoDB | `mongodb` | npm package `mongodb` | Not switchable yet; `database` can set the default database | `readonly`, `blacklist`, `keepAliveSeconds` |
+| Oracle | `oracle` | npm package `oracledb` | `oracleDriver: "oracledb" \| "sqlcl"`; SQLcl mode can configure `sqlclPath` and `javaHome`. SQLcl is recommended for older Oracle versions | `readonly`, `blacklist`, `keepAliveSeconds` |
+| MongoDB | `mongodb` | npm package `mongodb` | Not switchable yet; `database` can be configured as the default database | `readonly`, `blacklist`, `keepAliveSeconds` |
 
 ## Installation
 
@@ -53,14 +53,14 @@ Driver configuration table:
 
 - Node.js `>= 20`
 - npm `>= 10`
-- Local network access to target databases
-- Docker and Docker Compose for integration tests
-- SQLcl and Java if Oracle uses SQLcl
+- Local network access to the target database
+- Docker and Docker Compose if you run integration tests
+- SQLcl and Java installed locally if Oracle uses SQLcl
 
 ### AI One-Click Installation
 
 ```text
-Please read https://github.com/sleepinginsummer/database-cli/blob/main/AI_INSTALL.md, follow the instructions to install the CLI, and add `SKILL.md`.
+Please read https://github.com/sleepinginsummer/database-cli/blob/main/AI_INSTALL.md, install the CLI as instructed, and add `SKILL.md`.
 ```
 
 ### Manual Global Installation
@@ -91,7 +91,7 @@ Default configuration file:
 ~/.database-cli/config.json
 ```
 
-Override the configuration path with an environment variable:
+You can override the configuration path with an environment variable:
 
 ```bash
 DATABASE_CLI_CONFIG=/path/to/config.json database-cli list
@@ -99,34 +99,34 @@ DATABASE_CLI_CONFIG=/path/to/config.json database-cli list
 
 The configuration file is an object. Each key under `databases` is a database connection name:
 
-- `type`: Database type. Supported values are `mysql`, `postgres`, `redis`, `oracle`, and `mongodb`
+- `type`: Database type, supports `mysql`, `postgres`, `redis`, `oracle`, and `mongodb`
 - `url`: Database connection URL
-- `sshTunnel`: Optional SSH tunnel settings. When enabled, the database URL host and port are reached through the SSH tunnel
-- `database`: Default MongoDB database name, optional
-- `readonly`: Whether read-only mode is enabled. Defaults to `true`; only set it to `false` when write access is explicitly required
+- `sshTunnel`: Optional SSH tunnel configuration. When enabled, the database URL host and port are reached through SSH forwarding
+- `database`: Optional default MongoDB database name
+- `readonly`: Whether read-only mode is enabled, default `true`; only explicitly set `false` when write access is really required
 - `blacklist`: Command blocklist array, case-insensitive
-- `keepAliveSeconds`: Per-database connection idle timeout in seconds, defaults to `180`
-- `oracleDriver`: Oracle driver, either `oracledb` or `sqlcl`
+- `keepAliveSeconds`: Idle release timeout in seconds for a single database connection, default `180`
+- `oracleDriver`: Oracle driver, supports `oracledb` or `sqlcl`
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
-- `javaHome`: `JAVA_HOME` used by SQLcl, optional
+- `javaHome`: Optional `JAVA_HOME` used by SQLcl
 
 `sshTunnel` supports password, private key, password plus private key, and passphrase-protected private key authentication:
 
-- `host`: SSH jump host
-- `port`: SSH port, defaults to `22`
+- `host`: SSH jump host address
+- `port`: SSH port, default `22`
 - `username`: SSH username
-- `password`: SSH password, optional
-- `privateKeyPath`: Private key file path, optional, supports `~`
-- `privateKey`: Private key content, optional, mutually exclusive with `privateKeyPath`
-- `passphrase`: Private key passphrase, optional and only valid with a private key
-- `readyTimeout`: SSH connection timeout in milliseconds, optional
+- `password`: Optional SSH password
+- `privateKeyPath`: Optional private key file path, supports `~`
+- `privateKey`: Optional private key content, mutually exclusive with `privateKeyPath`
+- `passphrase`: Optional private key passphrase, only valid when a private key is configured
+- `readyTimeout`: Optional SSH connection timeout in milliseconds
 
-The blocklist is checked before read-only mode. If a command matches the blocklist, it is rejected immediately; otherwise the read-only check is applied.
+The blocklist and read-only mode work together with a fixed priority: check the blocklist first, reject immediately on match, and only check read-only mode when no blocklist rule matches.
 
 Read-only mode notes:
 
-- Read-only mode is enabled by default. Write commands are rejected even when `readonly` is omitted
-- It is recommended to keep all database connections read-only by default. If data changes are needed, let the AI generate the SQL or command first, then execute it after confirmation
+- Read-only mode is enabled by default; write operations are still rejected when `readonly` is omitted
+- It is recommended to keep all database connections read-only by default. When data changes are needed, let AI generate the SQL or command first, then execute it after your confirmation
 - Only set `readonly: false` on a specific connection when write access is truly required
 
 Reference configuration:
@@ -177,27 +177,27 @@ Reference configuration:
 
 ## Permission Configuration
 
-Permission control should use both `readonly` and `blacklist` together. Do not rely on only one of them.
+It is recommended to use both `readonly` and `blacklist` together for permission control. Do not rely on only one of them.
 
 ### Read-only Mode
 
 - The default value is `true`
 - When `readonly` is omitted, the connection is still treated as read-only
 - It is recommended to keep all day-to-day query connections read-only by default
-- If data changes are needed, let the AI generate the SQL or command first, then execute it after confirmation
+- When data changes are needed, let AI generate the SQL or command first, then execute it after your confirmation
 - Only dedicated writable connections should explicitly set `readonly: false`
 
 ### Command Blocklist
 
 - The blocklist has higher priority than read-only mode
-- When a command matches the blocklist, it is rejected immediately
-- It is suitable for blocking high-risk operations such as dropping data, schema changes, mass writes, and cache wipe commands
+- A command is rejected immediately once it matches the blocklist
+- It is suitable for blocking high-risk commands such as dropping data, schema changes, mass writes, and cache-clearing operations
 - It is recommended for production databases, shared test databases, and online Redis instances
 
 ### Execution Order
 
 1. Check `blacklist` first
-2. Reject immediately if matched
+2. Reject immediately on match
 3. Check `readonly` only when not matched
 4. When `readonly` is enabled, only read commands are allowed
 
@@ -221,7 +221,7 @@ Common high-risk MongoDB commands:
 ["insertOne", "insertMany", "updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany", "findAndModify", "findOneAndUpdate", "findOneAndDelete", "drop", "dropDatabase", "createIndex", "dropIndex"]
 ```
 
-### Recommended Configurations
+### Recommended Configuration Examples
 
 Recommended for production databases:
 
@@ -251,7 +251,7 @@ Recommended for a dedicated writable connection:
 
 Official link: https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/
 
-Oracle uses the npm package `oracledb` by default. Older Oracle servers may fail in Thin mode with errors such as `NJS-138`. In that case, switch that Oracle connection to SQLcl:
+Oracle uses the npm package `oracledb` by default. If the target Oracle version is older, Thin mode compatibility errors such as `NJS-138` may appear. In that case, switch a single Oracle connection to SQLcl:
 
 ```json
 {
@@ -265,17 +265,34 @@ Oracle uses the npm package `oracledb` by default. Older Oracle servers may fail
 }
 ```
 
-SQLcl mode sends the connection script through stdin so the password does not appear in process arguments. Safety checks still run before execution, including blocklist and read-only mode.
+SQLcl mode passes the connection script through stdin to avoid exposing the password in process arguments. Security checks still happen before execution, and both blocklist and read-only mode remain effective.
+
+## Update
+
+```bash
+npm install -g @sleepinsummer/database-cli@latest
+```
 
 ## Uninstall and Cleanup
+
+Update the locally installed global package:
+
+```bash
+npm install -g @sleepinsummer/database-cli@latest
+```
+
+Uninstall and clean local configuration:
 
 ```bash
 npm uninstall -g @sleepinsummer/database-cli
 npm cache clean --force
 rm -rf ~/.database-cli
-docker compose down
 ```
 
 ## License
 
 [MIT](LICENSE)
+
+## Friendly Links
+
+- [LINUX DO - A New Ideal Community](https://linux.do/)

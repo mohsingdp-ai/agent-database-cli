@@ -1,6 +1,9 @@
 import { MongoClient, type Db } from "mongodb";
 import type { DatabaseAdapter, MetadataRequest, QueryResult } from "../types.js";
 
+const DEFAULT_QUERY_LIMIT = 100;
+const MAX_QUERY_LIMIT = 1000;
+
 export class MongoDbAdapter implements DatabaseAdapter {
   private client?: MongoClient;
   private db?: Db;
@@ -60,13 +63,13 @@ export class MongoDbAdapter implements DatabaseAdapter {
     const collection = this.db!.collection(request.collection);
     switch (operation) {
       case "find":
-        return collection.find(request.filter, { projection: request.projection }).limit(request.limit ?? 100).toArray();
+        return collection.find(request.filter, { projection: request.projection }).limit(request.limit ?? DEFAULT_QUERY_LIMIT).toArray();
       case "findOne": {
         const row = await collection.findOne(request.filter, { projection: request.projection });
         return row ? [row] : [];
       }
       case "aggregate":
-        return collection.aggregate(request.pipeline ?? []).limit(request.limit ?? 100).toArray();
+        return collection.aggregate(request.pipeline ?? []).limit(request.limit ?? DEFAULT_QUERY_LIMIT).toArray();
       case "count":
       case "countDocuments": {
         const count = await collection.countDocuments(request.filter);
@@ -106,12 +109,50 @@ function normalizeMongoPayload(payload: unknown): MongoPayload {
   if (!value.collection || typeof value.collection !== "string") {
     throw new Error("MongoDB 命令必须提供 collection");
   }
+  const filter = normalizePlainObject(value.filter, "filter") ?? {};
+  const projection = normalizePlainObject(value.projection, "projection");
+  const pipeline = normalizePipeline(value.pipeline);
+  const limit = normalizeLimit(value.limit);
   return {
     collection: value.collection,
-    filter: value.filter ?? {},
-    projection: value.projection,
-    pipeline: value.pipeline,
-    limit: value.limit,
+    filter,
+    projection,
+    pipeline,
+    limit,
     field: value.field
   };
+}
+
+function normalizePlainObject(value: unknown, fieldName: string): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isPlainObject(value)) {
+    throw new Error(`MongoDB 命令 ${fieldName} 必须是对象`);
+  }
+  return value;
+}
+
+function normalizePipeline(value: unknown): Record<string, unknown>[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || !value.every(isPlainObject)) {
+    throw new Error("MongoDB 命令 pipeline 必须是对象数组");
+  }
+  return value;
+}
+
+function normalizeLimit(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > MAX_QUERY_LIMIT) {
+    throw new Error(`MongoDB 命令 limit 必须是 1-${MAX_QUERY_LIMIT} 的整数`);
+  }
+  return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

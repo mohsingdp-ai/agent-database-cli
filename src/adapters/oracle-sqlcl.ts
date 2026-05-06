@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname } from "node:path";
@@ -7,8 +8,41 @@ import { BaseSqlAdapter } from "./base-sql.js";
 import type { QueryResult } from "../types.js";
 import { maskSecret } from "../utils/masking.js";
 
-const QUERY_RESULT_BEGIN_MARKER = "__DATABASE_CLI_SQLCL_RESULT_BEGIN__";
-const QUERY_RESULT_END_MARKER = "__DATABASE_CLI_SQLCL_RESULT_END__";
+const SQLCL_META_COMMANDS = new Set([
+  "@",
+  "@@",
+  "accept",
+  "append",
+  "break",
+  "clear",
+  "column",
+  "connect",
+  "copy",
+  "define",
+  "disconnect",
+  "edit",
+  "execute",
+  "exit",
+  "get",
+  "host",
+  "input",
+  "list",
+  "password",
+  "pause",
+  "print",
+  "prompt",
+  "quit",
+  "remark",
+  "run",
+  "save",
+  "set",
+  "show",
+  "spool",
+  "start",
+  "undefine",
+  "variable",
+  "whenever"
+]);
 
 export class OracleSqlclAdapter extends BaseSqlAdapter {
   constructor(
@@ -55,7 +89,8 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
   }
 
   private runSqlcl(command: string): Promise<{ output: string; queryResult?: QueryResult }> {
-    return this.withTempScript(command, (scriptPath) => new Promise((resolve, reject) => {
+    const markers = createQueryResultMarkers();
+    return this.withTempScript(command, markers, (scriptPath) => new Promise((resolve, reject) => {
       const child = spawn(this.sqlclPath, ["-S", "/nolog", `@${scriptPath}`], {
         env: this.buildEnv(),
         stdio: ["ignore", "pipe", "pipe"]
@@ -81,7 +116,7 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
           return;
         }
         if (code === 0) {
-          resolve(parseSqlclOutput(stdoutOutput, stderrOutput));
+          resolve(parseSqlclOutput(stdoutOutput, stderrOutput, markers));
           return;
         }
         reject(new Error(maskSecret(`SQLcl 执行失败(code=${code}): ${stderr || stdout}`.trim())));
@@ -89,8 +124,8 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
     }));
   }
 
-  private buildScript(command: string): string {
-    const sql = command.trim().replace(/;+\s*$/, "");
+  private buildScript(command: string, markers: QueryResultMarkers): string {
+    const sql = normalizeSqlclSql(command);
     return [
       "set heading on",
       "set feedback off",
@@ -99,9 +134,9 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
       "set sqlformat json",
       "whenever sqlerror exit sql.sqlcode",
       `connect ${this.buildConnectString()}`,
-      `prompt ${QUERY_RESULT_BEGIN_MARKER}`,
+      `prompt ${markers.begin}`,
       `${sql};`,
-      `prompt ${QUERY_RESULT_END_MARKER}`,
+      `prompt ${markers.end}`,
       "exit"
     ].join("\n");
   }
@@ -132,11 +167,15 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
     };
   }
 
-  private async withTempScript<T>(command: string, run: (scriptPath: string) => Promise<T>): Promise<T> {
+  private async withTempScript<T>(
+    command: string,
+    markers: QueryResultMarkers,
+    run: (scriptPath: string) => Promise<T>
+  ): Promise<T> {
     const directoryPath = await mkdtemp(join(tmpdir(), "database-cli-sqlcl-"));
     const scriptPath = join(directoryPath, "command.sql");
     try {
-      await writeFile(scriptPath, this.buildScript(command), "utf8");
+      await writeFile(scriptPath, this.buildScript(command, markers), { encoding: "utf8", mode: 0o600 });
       return await run(scriptPath);
     } finally {
       await rm(directoryPath, { recursive: true, force: true });
@@ -155,9 +194,26 @@ function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "");
 }
 
-function parseSqlclOutput(stdoutOutput: string, stderrOutput: string): { output: string; queryResult?: QueryResult } {
+interface QueryResultMarkers {
+  begin: string;
+  end: string;
+}
+
+function createQueryResultMarkers(): QueryResultMarkers {
+  const token = randomUUID().replace(/-/g, "");
+  return {
+    begin: `__DATABASE_CLI_SQLCL_RESULT_BEGIN_${token}__`,
+    end: `__DATABASE_CLI_SQLCL_RESULT_END_${token}__`
+  };
+}
+
+function parseSqlclOutput(
+  stdoutOutput: string,
+  stderrOutput: string,
+  markers: QueryResultMarkers
+): { output: string; queryResult?: QueryResult } {
   const preferredOutput = stdoutOutput || stderrOutput;
-  const markerResult = extractMarkedSection(stdoutOutput) ?? extractMarkedSection(stderrOutput);
+  const markerResult = extractMarkedSection(stdoutOutput, markers) ?? extractMarkedSection(stderrOutput, markers);
   if (!markerResult) {
     return { output: preferredOutput };
   }
@@ -179,14 +235,14 @@ function parseSqlclOutput(stdoutOutput: string, stderrOutput: string): { output:
   };
 }
 
-function extractMarkedSection(output: string): { section: string } | undefined {
-  const beginIndex = output.indexOf(QUERY_RESULT_BEGIN_MARKER);
-  const endIndex = output.indexOf(QUERY_RESULT_END_MARKER);
+function extractMarkedSection(output: string, markers: QueryResultMarkers): { section: string } | undefined {
+  const beginIndex = output.indexOf(markers.begin);
+  const endIndex = output.indexOf(markers.end);
   if (beginIndex === -1 || endIndex === -1 || endIndex <= beginIndex) {
     return undefined;
   }
   const section = output
-    .slice(beginIndex + QUERY_RESULT_BEGIN_MARKER.length, endIndex)
+    .slice(beginIndex + markers.begin.length, endIndex)
     .trim();
   return { section };
 }
@@ -243,4 +299,85 @@ function containsSqlclError(output: string): boolean {
     return false;
   }
   return /(^|\n)\s*(SP2-|ORA-)/i.test(output);
+}
+
+function normalizeSqlclSql(command: string): string {
+  const sql = command.trim().replace(/;+\s*$/, "");
+  assertSingleSqlStatement(sql);
+  assertNoSqlclMetaCommand(sql);
+  return sql;
+}
+
+function assertSingleSqlStatement(command: string): void {
+  const sanitized = stripSqlLiteralsAndComments(command);
+  if (sanitized.includes(";")) {
+    throw new Error("SQLcl 模式仅允许执行单条 SQL 语句");
+  }
+}
+
+function assertNoSqlclMetaCommand(command: string): void {
+  const sanitized = stripSqlLiteralsAndComments(command);
+  for (const line of sanitized.split(/\r?\n/)) {
+    const head = line.trim().split(/\s+/)[0]?.toLowerCase();
+    if (head && (SQLCL_META_COMMANDS.has(head) || head.startsWith("@"))) {
+      throw new Error(`SQLcl 模式拒绝执行 SQLcl 元命令: ${head}`);
+    }
+  }
+}
+
+function stripSqlLiteralsAndComments(command: string): string {
+  let result = "";
+  let index = 0;
+
+  while (index < command.length) {
+    const char = command[index];
+    const next = command[index + 1];
+
+    if (char === "-" && next === "-") {
+      const endIndex = findLineEnd(command, index + 2);
+      result += " ".repeat(endIndex - index);
+      index = endIndex;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      const commentEnd = command.indexOf("*/", index + 2);
+      const endIndex = commentEnd === -1 ? command.length : commentEnd + 2;
+      result += " ".repeat(endIndex - index);
+      index = endIndex;
+      continue;
+    }
+
+    if (char === "'") {
+      const endIndex = findQuotedTokenEnd(command, index);
+      result += " ".repeat(endIndex - index);
+      index = endIndex;
+      continue;
+    }
+
+    result += char;
+    index += 1;
+  }
+
+  return result;
+}
+
+function findLineEnd(command: string, start: number): number {
+  const lineEnd = command.indexOf("\n", start);
+  return lineEnd === -1 ? command.length : lineEnd;
+}
+
+function findQuotedTokenEnd(command: string, start: number): number {
+  let index = start + 1;
+  while (index < command.length) {
+    if (command[index] === "'") {
+      if (command[index + 1] === "'") {
+        index += 2;
+        continue;
+      }
+      return index + 1;
+    }
+    index += 1;
+  }
+  return command.length;
 }

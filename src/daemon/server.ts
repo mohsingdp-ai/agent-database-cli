@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
 import { dirname } from "node:path";
 import type { DaemonRequest, DaemonResponse } from "../types.js";
@@ -49,7 +49,8 @@ async function handleRequest(request: DaemonRequest): Promise<DaemonResponse> {
 async function start(): Promise<void> {
   await mkdir(dirname(PID_PATH), { recursive: true });
   if (!isWindowsNamedPipe(SOCKET_PATH)) {
-    await mkdir(dirname(SOCKET_PATH), { recursive: true });
+    await mkdir(dirname(SOCKET_PATH), { recursive: true, mode: 0o700 });
+    await chmod(dirname(SOCKET_PATH), 0o700);
     await rm(SOCKET_PATH, { force: true });
   }
   const server = net.createServer((socket) => {
@@ -70,6 +71,9 @@ async function start(): Promise<void> {
   });
 
   server.listen(SOCKET_PATH, async () => {
+    if (!isWindowsNamedPipe(SOCKET_PATH)) {
+      await chmod(SOCKET_PATH, 0o600);
+    }
     await writeFile(PID_PATH, String(process.pid), "utf8");
     process.stdout.write(`database-cli daemon started: ${SOCKET_PATH}\n`);
     touchDaemonIdleTimer();

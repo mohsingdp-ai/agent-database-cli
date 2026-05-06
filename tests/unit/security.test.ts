@@ -16,6 +16,62 @@ describe("security", () => {
     ).toThrow(/黑名单/);
   });
 
+  it("SQL 黑名单按完整关键字匹配，避免字段名子串误判", () => {
+    expect(() =>
+      assertCommandAllowed(
+        {
+          type: "oracle",
+          url: "oracle://user:pass@localhost:1521/FREEPDB1",
+          readonly: true,
+          blacklist: ["create"]
+        },
+        "select FCREATETIME from AUDIO where FAUDIOSTATUS in (-1, 0)"
+      )
+    ).not.toThrow();
+  });
+
+  it("SQL 黑名单忽略字符串字面量里的关键字", () => {
+    expect(() =>
+      assertCommandAllowed(
+        {
+          type: "oracle",
+          url: "oracle://user:pass@localhost:1521/FREEPDB1",
+          readonly: true,
+          blacklist: ["create"]
+        },
+        "select 'create' as keyword from dual"
+      )
+    ).not.toThrow();
+  });
+
+  it("SQL 黑名单忽略注释和引用标识符里的关键字", () => {
+    expect(() =>
+      assertCommandAllowed(
+        {
+          type: "mysql",
+          url: "mysql://user:pass@localhost/db",
+          readonly: true,
+          blacklist: ["create"]
+        },
+        "select `create` from audit_log -- create table ignored"
+      )
+    ).not.toThrow();
+  });
+
+  it("SQL 黑名单仍拒绝语句中的高危关键字", () => {
+    expect(() =>
+      assertCommandAllowed(
+        {
+          type: "mysql",
+          url: "mysql://user:pass@localhost/db",
+          readonly: true,
+          blacklist: ["create"]
+        },
+        "select 1; create table audit_log(id int)"
+      )
+    ).toThrow(/黑名单/);
+  });
+
   it("SQL 只读模式只允许读命令", () => {
     expect(isReadOnlyCommand("mysql", "select * from users")).toBe(true);
     expect(isReadOnlyCommand("postgres", "delete from users")).toBe(false);

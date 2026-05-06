@@ -12,7 +12,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
   <img src="https://img.shields.io/badge/Windows-MacOS-0078D6?labelColor=0078D6&color=C0C0C0" alt="Windows/MacOS">
-  <img src="https://img.shields.io/badge/release-v0.2.2-blue" alt="release v0.2.2">
+  <img src="https://img.shields.io/badge/release-v0.2.6-blue" alt="release v0.2.6">
 </p>
 
 [AI One-Click Installation](#ai-one-click-installation) · [Installation](#installation) · [Configuration](#configuration) · [Permission Configuration](#permission-configuration) · [Oracle SQLcl](#oracle-sqlcl) · [License](#license) · [Friendly Links](#friendly-links)
@@ -43,7 +43,8 @@ Driver configuration table:
 | --- | --- | --- | --- | --- |
 | MySQL | `mysql` | npm package `mysql2` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
 | PostgreSQL | `postgres` | npm package `pg` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Redis | `redis` | npm package `redis` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
+| Redis standalone | `redis` | npm package `redis` | Configure `url` only | `readonly`, `blacklist`, `keepAliveSeconds` |
+| Redis cluster | `redis` | npm package `redis` | Configure both `url` and `redisCluster.nodes` | `readonly`, `blacklist`, `keepAliveSeconds` |
 | Oracle | `oracle` | npm package `oracledb` | `oracleDriver: "oracledb" \| "sqlcl"`; SQLcl mode can configure `sqlclPath` and `javaHome`. SQLcl is recommended for older Oracle versions | `readonly`, `blacklist`, `keepAliveSeconds` |
 | MongoDB | `mongodb` | npm package `mongodb` | Not switchable yet; `database` can be configured as the default database | `readonly`, `blacklist`, `keepAliveSeconds` |
 
@@ -100,8 +101,9 @@ DATABASE_CLI_CONFIG=/path/to/config.json database-cli list
 The configuration file is an object. Each key under `databases` is a database connection name:
 
 - `type`: Database type, supports `mysql`, `postgres`, `redis`, `oracle`, and `mongodb`
-- `url`: Database connection URL
-- `sshTunnel`: Optional SSH tunnel configuration. When enabled, the database URL host and port are reached through SSH forwarding
+- `url`: Database connection URL. In Redis standalone mode it is the direct target. In Redis cluster mode it is used as the entry node URL
+- `redisCluster`: Optional Redis cluster configuration. When configured, cluster mode is used
+- `sshTunnel`: Optional SSH tunnel configuration. In standalone mode, the database URL host and port are forwarded through SSH. In Redis cluster mode, a local forwarding port is created for each configured cluster node
 - `database`: Optional default MongoDB database name
 - `readonly`: Whether read-only mode is enabled, default `true`; only explicitly set `false` when write access is really required
 - `blacklist`: Command blocklist array, case-insensitive
@@ -109,6 +111,19 @@ The configuration file is an object. Each key under `databases` is a database co
 - `oracleDriver`: Oracle driver, supports `oracledb` or `sqlcl`
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
 - `javaHome`: Optional `JAVA_HOME` used by SQLcl
+
+`redisCluster` currently supports:
+
+- `nodes`: Array of Redis cluster node URLs. At least one node is required. `redis://` and `rediss://` are supported
+
+Redis cluster notes:
+
+- In the current implementation, Redis cluster mode requires both `url` and `redisCluster.nodes`
+- `url` is used as the cluster entry node. It is recommended to use any stable reachable cluster node URL
+- `redisCluster.nodes` is used as the cluster node list. With SSH tunneling, it is also used to create per-node local forwarding and address mapping
+- When `redisCluster.nodes` is configured, the client switches to Redis Cluster mode
+- When `sshTunnel` is also configured, the program creates a local forwarded port for each cluster node and uses address mapping for cluster redirects
+- With SSH tunneling, `redisCluster.nodes` should cover the cluster node addresses that the client may be redirected to
 
 `sshTunnel` supports password, private key, password plus private key, and passphrase-protected private key authentication:
 
@@ -154,10 +169,44 @@ Reference configuration:
       "readonly": true,
       "keepAliveSeconds": 180
     },
-    "cache": {
+    "redis-standalone": {
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
+      "blacklist": ["flushall", "flushdb"],
+      "keepAliveSeconds": 180
+    },
+    "redis-cluster": {
+      "type": "redis",
+      "url": "redis://10.0.0.11:7001",
+      "redisCluster": {
+        "nodes": [
+          "redis://10.0.0.11:7001",
+          "redis://10.0.0.12:7001",
+          "redis://10.0.0.13:7001"
+        ]
+      },
+      "readonly": true,
+      "blacklist": ["flushall", "flushdb"],
+      "keepAliveSeconds": 180
+    },
+    "redis-cluster-via-ssh": {
+      "type": "redis",
+      "url": "redis://10.0.0.11:7001",
+      "redisCluster": {
+        "nodes": [
+          "redis://10.0.0.11:7001",
+          "redis://10.0.0.12:7001",
+          "redis://10.0.0.13:7001"
+        ]
+      },
+      "sshTunnel": {
+        "host": "jump.example.com",
+        "port": 22,
+        "username": "deploy",
+        "privateKeyPath": "~/.ssh/id_rsa"
+      },
+      "readonly": true,
       "blacklist": ["flushall", "flushdb"],
       "keepAliveSeconds": 180
     },
@@ -274,12 +323,6 @@ npm install -g @sleepinsummer/database-cli@latest
 ```
 
 ## Uninstall and Cleanup
-
-Update the locally installed global package:
-
-```bash
-npm install -g @sleepinsummer/database-cli@latest
-```
 
 Uninstall and clean local configuration:
 

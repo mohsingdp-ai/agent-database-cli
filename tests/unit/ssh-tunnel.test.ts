@@ -14,6 +14,12 @@ describe("ssh tunnel", () => {
     );
   });
 
+  it("支持重写 Redis URL", () => {
+    expect(rewriteDatabaseUrl("redis", "redis://192.0.2.10:6373", "127.0.0.1", 41000)).toBe(
+      "redis://127.0.0.1:41000"
+    );
+  });
+
   it("拒绝 MongoDB 多 host URL", () => {
     expect(() =>
       rewriteDatabaseUrl("mongodb", "mongodb://db1.internal:27017,db2.internal:27017/app", "127.0.0.1", 41000)

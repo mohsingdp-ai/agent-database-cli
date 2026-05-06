@@ -39,6 +39,9 @@ function validateDatabaseConfig(name: string, db: DatabaseConfig): void {
   if (!db.url || typeof db.url !== "string") {
     throw new Error(`数据库配置 ${name} 必须提供 url`);
   }
+  if (db.redisCluster !== undefined) {
+    validateRedisClusterConfig(name, db);
+  }
   if (db.blacklist && !Array.isArray(db.blacklist)) {
     throw new Error(`数据库配置 ${name} 的 blacklist 必须是数组`);
   }
@@ -61,6 +64,39 @@ function validateDatabaseConfig(name: string, db: DatabaseConfig): void {
   }
   if (db.javaHome !== undefined && typeof db.javaHome !== "string") {
     throw new Error(`数据库配置 ${name} 的 javaHome 必须是字符串`);
+  }
+}
+
+function validateRedisClusterConfig(name: string, db: DatabaseConfig): void {
+  if (db.type !== "redis") {
+    throw new Error(`数据库配置 ${name} 只有 redis 类型允许配置 redisCluster`);
+  }
+  if (!db.redisCluster || typeof db.redisCluster !== "object") {
+    throw new Error(`数据库配置 ${name} 的 redisCluster 必须是对象`);
+  }
+  if (!Array.isArray(db.redisCluster.nodes) || db.redisCluster.nodes.length === 0) {
+    throw new Error(`数据库配置 ${name} 的 redisCluster.nodes 必须是非空数组`);
+  }
+
+  for (const [index, node] of db.redisCluster.nodes.entries()) {
+    if (typeof node !== "string" || node.trim() === "") {
+      throw new Error(`数据库配置 ${name} 的 redisCluster.nodes[${index}] 必须是非空字符串`);
+    }
+    validateRedisNodeUrl(name, node, index);
+  }
+
+}
+
+function validateRedisNodeUrl(name: string, url: string, index: number): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`数据库配置 ${name} 的 redisCluster.nodes[${index}] 不是合法 URL`);
+  }
+
+  if (!["redis:", "rediss:"].includes(parsed.protocol)) {
+    throw new Error(`数据库配置 ${name} 的 redisCluster.nodes[${index}] 只支持 redis:// 或 rediss://`);
   }
 }
 

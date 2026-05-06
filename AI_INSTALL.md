@@ -59,8 +59,7 @@ cp SKILL.md ~/.codex/skills/database-cli/SKILL.md
 ## 4. 验证
 
 ```bash
-database-cli --help
-test -f ~/.database-cli/config.json
+npm install -g @sleepinsummer/database-cli@latest
 ```
 
 配置完成后，测试执行：

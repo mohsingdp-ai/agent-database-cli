@@ -42,6 +42,60 @@ describe("config", () => {
     ).toThrow("只有 oracle 类型允许配置 oracleDriver");
   });
 
+  it("只允许 Redis 配置 redisCluster", () => {
+    expect(() =>
+      validateConfig({
+        databases: {
+          bad: {
+            type: "mysql",
+            url: "mysql://u:p@localhost/db",
+            // @ts-expect-error 测试运行时校验
+            redisCluster: {
+              nodes: ["redis://127.0.0.1:7001"]
+            }
+          }
+        }
+      })
+    ).toThrow("只有 redis 类型允许配置 redisCluster");
+  });
+
+  it("允许 Redis 集群配置", () => {
+    expect(() =>
+      validateConfig({
+        databases: {
+          cluster: {
+            type: "redis",
+            url: "redis://127.0.0.1:7001",
+            redisCluster: {
+              nodes: ["redis://127.0.0.1:7001", "redis://127.0.0.1:7002"]
+            }
+          }
+        }
+      })
+    ).not.toThrow();
+  });
+
+  it("允许 Redis 集群与 SSH 隧道同时配置", () => {
+    expect(() =>
+      validateConfig({
+        databases: {
+          cluster: {
+            type: "redis",
+            url: "redis://192.0.2.10:6373",
+            redisCluster: {
+              nodes: ["redis://192.0.2.10:6373", "redis://192.0.2.11:6373"]
+            },
+            sshTunnel: {
+              host: "jump.example.com",
+              username: "deploy",
+              privateKeyPath: "~/.ssh/id_rsa"
+            }
+          }
+        }
+      })
+    ).not.toThrow();
+  });
+
   it("允许配置 SSH 隧道密码认证", () => {
     expect(() =>
       validateConfig({

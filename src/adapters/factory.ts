@@ -13,7 +13,7 @@ export function createAdapter(config: DatabaseConfig, url = config.url): Databas
     case "postgres":
       return new PostgresAdapter(url);
     case "redis":
-      return new RedisAdapter(url);
+      return new RedisAdapter(url, config.redisCluster);
     case "oracle":
       if (config.oracleDriver === "sqlcl") {
         return new OracleSqlclAdapter(url, config.sqlclPath, config.javaHome);

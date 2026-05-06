@@ -3,10 +3,17 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import net from "node:net";
 import { Client, type ConnectConfig } from "ssh2";
-import type { DatabaseConfig, DatabaseType, SshTunnelConfig } from "./types.js";
+import type {
+  DatabaseConfig,
+  DatabaseType,
+  RedisClusterConnectionConfig,
+  RedisNodeAddress,
+  SshTunnelConfig
+} from "./types.js";
 
 export interface StartedSshTunnel {
   url: string;
+  redisCluster?: RedisClusterConnectionConfig;
   close(): Promise<void>;
 }
 
@@ -26,6 +33,10 @@ const DEFAULT_PORTS: Record<DatabaseType, number> = {
 export async function startSshTunnel(config: DatabaseConfig): Promise<StartedSshTunnel | undefined> {
   if (!config.sshTunnel) {
     return undefined;
+  }
+
+  if (config.type === "redis" && config.redisCluster) {
+    return startRedisClusterSshTunnel(config);
   }
 
   const endpoint = parseDatabaseEndpoint(config.type, config.url);
@@ -56,6 +67,55 @@ export async function startSshTunnel(config: DatabaseConfig): Promise<StartedSsh
     ssh.end();
     throw error;
   }
+}
+
+async function startRedisClusterSshTunnel(config: DatabaseConfig): Promise<StartedSshTunnel> {
+  const ssh = new Client();
+  const servers: net.Server[] = [];
+
+  try {
+    await connectSshClient(ssh, config.sshTunnel!);
+
+    const nodeAddressMap: Record<string, RedisNodeAddress> = {};
+    const localNodes: string[] = [];
+
+    for (const nodeUrl of config.redisCluster!.nodes) {
+      const endpoint = parseRedisClusterNode(nodeUrl);
+      const server = createForwardServer(ssh, endpoint.host, endpoint.port);
+      servers.push(server);
+      const localPort = await listenLocal(server);
+      localNodes.push(rewriteDatabaseUrl("redis", nodeUrl, "127.0.0.1", localPort));
+      nodeAddressMap[`${endpoint.host}:${endpoint.port}`] = { host: "127.0.0.1", port: localPort };
+    }
+
+    return {
+      url: rewriteDatabaseUrl("redis", config.url, "127.0.0.1", extractPort(localNodes[0])),
+      redisCluster: {
+        nodes: localNodes,
+        nodeAddressMap
+      },
+      async close() {
+        await Promise.all(servers.map((server) => closeServer(server)));
+        ssh.end();
+      }
+    };
+  } catch (error) {
+    await Promise.all(servers.map((server) => closeServer(server).catch(() => undefined)));
+    ssh.end();
+    throw error;
+  }
+}
+
+function createForwardServer(ssh: Client, host: string, port: number): net.Server {
+  return net.createServer((socket) => {
+    ssh.forwardOut(socket.localAddress || "127.0.0.1", socket.localPort || 0, host, port, (error, stream) => {
+      if (error) {
+        socket.destroy(error);
+        return;
+      }
+      socket.pipe(stream).pipe(socket);
+    });
+  });
 }
 
 export function rewriteDatabaseUrl(type: DatabaseType, url: string, host: string, port: number): string {
@@ -96,6 +156,23 @@ function parseDatabaseEndpoint(type: DatabaseType, url: string): DatabaseEndpoin
     host,
     port: parsed.port ? Number(parsed.port) : DEFAULT_PORTS[type]
   };
+}
+
+function parseRedisClusterNode(url: string): DatabaseEndpoint {
+  const parsed = new URL(url);
+  if (!parsed.hostname) {
+    throw new Error("Redis Cluster 节点 URL 必须包含 host");
+  }
+
+  return {
+    host: parsed.hostname,
+    port: parsed.port ? Number(parsed.port) : DEFAULT_PORTS.redis
+  };
+}
+
+function extractPort(url: string): number {
+  const parsed = new URL(url);
+  return parsed.port ? Number(parsed.port) : DEFAULT_PORTS.redis;
 }
 
 async function connectSshClient(client: Client, tunnel: SshTunnelConfig): Promise<void> {

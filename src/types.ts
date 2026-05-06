@@ -5,6 +5,7 @@ export type OutputFormat = "json" | "table";
 export interface DatabaseConfig {
   type: DatabaseType;
   url: string;
+  redisCluster?: RedisClusterConfig;
   sshTunnel?: SshTunnelConfig;
   database?: string;
   oracleDriver?: "oracledb" | "sqlcl";
@@ -13,6 +14,20 @@ export interface DatabaseConfig {
   readonly?: boolean;
   blacklist?: string[];
   keepAliveSeconds?: number;
+}
+
+export interface RedisClusterConfig {
+  nodes: string[];
+}
+
+export interface RedisClusterConnectionConfig {
+  nodes: string[];
+  nodeAddressMap?: Record<string, RedisNodeAddress>;
+}
+
+export interface RedisNodeAddress {
+  host: string;
+  port: number;
 }
 
 export interface SshTunnelConfig {

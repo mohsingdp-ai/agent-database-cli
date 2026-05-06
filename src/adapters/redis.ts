@@ -1,34 +1,59 @@
-import { createClient, type RedisClientType } from "redis";
-import type { DatabaseAdapter, MetadataRequest, QueryResult } from "../types.js";
+import { createClient, createCluster, type RedisClientType, type RedisClusterType } from "redis";
+import type {
+  DatabaseAdapter,
+  MetadataRequest,
+  QueryResult,
+  RedisClusterConnectionConfig
+} from "../types.js";
+import { isReadOnlyCommand } from "../security.js";
 
 export class RedisAdapter implements DatabaseAdapter {
-  private client?: RedisClientType;
+  private standaloneClient?: RedisClientType;
+  private clusterClient?: RedisClusterType;
 
-  constructor(private readonly url: string) {}
+  constructor(
+    private readonly url: string,
+    private readonly redisCluster?: RedisClusterConnectionConfig
+  ) {}
 
   async connect(): Promise<void> {
-    if (!this.client) {
-      this.client = createClient({ url: this.url });
-      await this.client.connect();
+    if (this.redisCluster) {
+      if (!this.clusterClient) {
+        this.clusterClient = createCluster({
+          rootNodes: [{ url: this.url }],
+          nodeAddressMap: this.redisCluster.nodeAddressMap
+        });
+        await this.clusterClient.connect();
+      }
+      return;
+    }
+
+    if (!this.standaloneClient) {
+      this.standaloneClient = createClient({ url: this.url });
+      await this.standaloneClient.connect();
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this.client) {
-      await this.client.quit();
-      this.client = undefined;
+    if (this.clusterClient) {
+      await this.clusterClient.quit();
+      this.clusterClient = undefined;
+    }
+    if (this.standaloneClient) {
+      await this.standaloneClient.quit();
+      this.standaloneClient = undefined;
     }
   }
 
   async test(): Promise<void> {
     await this.connect();
-    await this.client!.ping();
+    await this.executeRawCommand(["PING"], true);
   }
 
   async execute(command: string): Promise<QueryResult> {
     await this.connect();
     const parts = splitCommand(command);
-    const result = await this.client!.sendCommand(parts);
+    const result = await this.executeRawCommand(parts, isReadOnlyCommand("redis", command));
     return { rows: [{ result }], rowCount: 1 };
   }
 
@@ -38,8 +63,28 @@ export class RedisAdapter implements DatabaseAdapter {
     }
     await this.connect();
     const pattern = request.pattern || "*";
-    const keys = await this.client!.keys(pattern);
-    return { rows: keys.map((key) => ({ key })), fields: ["key"], rowCount: keys.length };
+    const keys = this.clusterClient ? await this.collectClusterKeys(pattern) : await this.standaloneClient!.keys(pattern);
+    return { rows: keys.map((key: string) => ({ key })), fields: ["key"], rowCount: keys.length };
+  }
+
+  private async executeRawCommand(parts: string[], isReadonly: boolean): Promise<unknown> {
+    if (this.clusterClient) {
+      const firstKey = getFirstKey(parts);
+      return this.clusterClient.sendCommand(firstKey, isReadonly, parts);
+    }
+    return this.standaloneClient!.sendCommand(parts);
+  }
+
+  private async collectClusterKeys(pattern: string): Promise<string[]> {
+    const keys = new Set<string>();
+    for (const node of this.clusterClient!.masters) {
+      const nodeClient = await this.clusterClient!.nodeClient(node);
+      const nodeKeys = await nodeClient.keys(pattern);
+      for (const key of nodeKeys) {
+        keys.add(key);
+      }
+    }
+    return [...keys];
   }
 }
 
@@ -54,4 +99,8 @@ function splitCommand(command: string): string[] {
     }
     return part;
   });
+}
+
+function getFirstKey(parts: string[]): string | undefined {
+  return parts.length > 1 ? parts[1] : undefined;
 }

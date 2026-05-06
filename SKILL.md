@@ -245,7 +245,7 @@ database-cli reset --db "<databaseName>"
 ```json
 {
   "type": "oracle",
-  "url": "oracle://USER:password@172.16.72.201:1521/qftest201",
+  "url": "oracle://USER:password@192.0.2.20:1521/qftest201",
   "oracleDriver": "sqlcl",
   "sqlclPath": "/opt/homebrew/Caskroom/sqlcl/26.1.0.086.1709/sqlcl/bin/sql",
   "javaHome": "/Applications/IntelliJ IDEA Ultimate.app/Contents/jbr/Contents/Home",

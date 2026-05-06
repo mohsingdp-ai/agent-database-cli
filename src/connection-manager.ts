@@ -24,8 +24,9 @@ export class ConnectionManager {
   }
 
   async execute(name: string, command: string): Promise<QueryResult> {
+    const config = getDatabaseConfig(this.config, name);
+    assertCommandAllowed(config, command);
     const entry = await this.getEntry(name);
-    assertCommandAllowed(entry.config, command);
     const result = await entry.adapter.execute(command);
     this.touch(name, entry);
     return result;
@@ -75,7 +76,8 @@ export class ConnectionManager {
 
     const config = getDatabaseConfig(this.config, name);
     const tunnel = await startSshTunnel(config);
-    const adapter = createAdapter(config, tunnel?.url);
+    const adapterConfig = tunnel?.redisCluster ? { ...config, redisCluster: tunnel.redisCluster } : config;
+    const adapter = createAdapter(adapterConfig, tunnel?.url);
     try {
       await adapter.connect();
     } catch (error) {

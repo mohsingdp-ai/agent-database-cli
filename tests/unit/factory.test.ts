@@ -6,6 +6,15 @@ describe("adapter factory", () => {
     expect(createAdapter({ type: "mysql", url: "mysql://u:p@localhost/db" })).toBeTruthy();
     expect(createAdapter({ type: "postgres", url: "postgres://u:p@localhost/db" })).toBeTruthy();
     expect(createAdapter({ type: "redis", url: "redis://localhost:6379" })).toBeTruthy();
+    expect(
+      createAdapter({
+        type: "redis",
+        url: "redis://127.0.0.1:7001",
+        redisCluster: {
+          nodes: ["redis://127.0.0.1:7001", "redis://127.0.0.1:7002"]
+        }
+      })
+    ).toBeTruthy();
     expect(createAdapter({ type: "oracle", url: "oracle://u:p@localhost:1521/FREEPDB1" })).toBeTruthy();
     expect(
       createAdapter({

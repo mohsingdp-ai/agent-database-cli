@@ -56,12 +56,12 @@ cp SKILL.md ~/.codex/skills/database-cli/SKILL.md
 
 如果 AI 使用其它 skills 目录，将 `SKILL.md` 复制到对应的 `database-cli/SKILL.md`。
 
-## 4. 验证
+## 4. 更新
 
 ```bash
 npm install -g @sleepinsummer/database-cli@latest
 ```
-
+## 5. 验证测试
 配置完成后，测试执行：
 
 ```bash

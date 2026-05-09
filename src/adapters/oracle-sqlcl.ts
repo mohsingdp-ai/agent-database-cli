@@ -172,7 +172,7 @@ export class OracleSqlclAdapter extends BaseSqlAdapter {
     markers: QueryResultMarkers,
     run: (scriptPath: string) => Promise<T>
   ): Promise<T> {
-    const directoryPath = await mkdtemp(join(tmpdir(), "database-cli-sqlcl-"));
+    const directoryPath = await mkdtemp(join(tmpdir(), "agent-database-cli-sqlcl-"));
     const scriptPath = join(directoryPath, "command.sql");
     try {
       await writeFile(scriptPath, this.buildScript(command, markers), { encoding: "utf8", mode: 0o600 });

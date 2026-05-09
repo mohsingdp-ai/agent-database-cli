@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AppConfig, DatabaseConfig, DatabaseType } from "./types.js";
 
-export const CONFIG_ENV = "DATABASE_CLI_CONFIG";
-export const DEFAULT_CONFIG_PATH = join(homedir(), ".database-cli", "config.json");
+export const CONFIG_ENV = "AGENT_DATABASE_CLI_CONFIG";
+export const DEFAULT_CONFIG_PATH = join(homedir(), ".agent-database-cli", "config.json");
 
 const SUPPORTED_TYPES = new Set<DatabaseType>(["mysql", "postgres", "redis", "oracle", "mongodb"]);
 

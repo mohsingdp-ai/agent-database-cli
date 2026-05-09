@@ -1,10 +1,10 @@
 {
-  "name": "@sleepinsummer/database-cli",
-  "version": "0.2.6",
+  "name": "agent-database-cli",
+  "version": "0.2.7",
   "description": "统一数据库命令行工具，支持只读、黑名单和本地连接守护进程。",
   "type": "module",
   "bin": {
-    "database-cli": "dist/cli.js"
+    "agent-database-cli": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -12,8 +12,8 @@
     "prepack": "npm run build",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
-    "test:integration": "DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration --exclude tests/integration/oracle.test.ts",
-    "test:integration:oracle": "DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration/oracle.test.ts"
+    "test:integration": "AGENT_DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration --exclude tests/integration/oracle.test.ts",
+    "test:integration:oracle": "AGENT_DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration/oracle.test.ts"
   },
   "files": [
     "dist",

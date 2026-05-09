@@ -14,7 +14,7 @@ const program = new Command();
 const packageVersion = readPackageVersion();
 
 program
-  .name("database-cli")
+  .name("agent-database-cli")
   .description("统一数据库命令行工具")
   .version(packageVersion)
   .option("--format <format>", "输出格式: json 或 table", "json");

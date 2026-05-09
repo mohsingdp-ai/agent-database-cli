@@ -1,13 +1,13 @@
 <div align="center">
 
-# database-cli
+# agent-database-cli
 
 A CLI-based multi-database tool that packages common database connection, query, metadata inspection, and connection reuse capabilities as local commands callable by agents.
 
 MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command blocklist · SQLcl Oracle · Local daemon
 
 <p>
-  <img src="https://img.shields.io/badge/CLI-database--cli-2ea44f" alt="CLI database-cli">
+  <img src="https://img.shields.io/badge/CLI-agent--database--cli-2ea44f" alt="CLI agent-database-cli">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License MIT">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
@@ -23,7 +23,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
 
 ## Introduction
 
-`database-cli` references the database adapter, config loading, safety checking, and connection management layering of [Anarkh-Lee/universal-db-mcp](https://github.com/Anarkh-Lee/universal-db-mcp), then rewrites it into a standalone CLI form without MCP, HTTP, or SSE services.
+`agent-database-cli` references the database adapter, config loading, safety checking, and connection management layering of [Anarkh-Lee/universal-db-mcp](https://github.com/Anarkh-Lee/universal-db-mcp), then rewrites it into a standalone CLI form without MCP, HTTP, or SSE services.
 
 What it can do:
 
@@ -61,25 +61,25 @@ Driver configuration table:
 ### AI One-Click Installation
 
 ```text
-Please read https://github.com/sleepinginsummer/database-cli/blob/main/AI_INSTALL.md, install the CLI as instructed, and add `SKILL.md`.
+Please read https://github.com/sleepinginsummer/agent-database-cli/blob/main/AI_INSTALL.md, install the CLI as instructed, and add `SKILL.md`.
 ```
 
 ### Manual Global Installation
 
 ```bash
-npm install -g @sleepinsummer/database-cli
-database-cli --help
+npm install -g agent-database-cli
+agent-database-cli --help
 ```
 
 If npm package installation is restricted, use the equivalent source installation flow:
 
 ```powershell
-git clone https://github.com/sleepinginsummer/database-cli.git
-cd database-cli
+git clone https://github.com/sleepinginsummer/agent-database-cli.git
+cd agent-database-cli
 npm install
 npm run build
 npm link
-database-cli --help
+agent-database-cli --help
 ```
 
 Add `SKILL.md` to the agent that needs to use this tool.
@@ -89,13 +89,13 @@ Add `SKILL.md` to the agent that needs to use this tool.
 Default configuration file:
 
 ```text
-~/.database-cli/config.json
+~/.agent-database-cli/config.json
 ```
 
 You can override the configuration path with an environment variable:
 
 ```bash
-DATABASE_CLI_CONFIG=/path/to/config.json database-cli list
+AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 ```
 
 The configuration file is an object. Each key under `databases` is a database connection name:
@@ -319,7 +319,7 @@ SQLcl mode passes the connection script through stdin to avoid exposing the pass
 ## Update
 
 ```bash
-npm install -g @sleepinsummer/database-cli@latest
+npm install -g agent-database-cli@latest
 ```
 
 ## Uninstall and Cleanup
@@ -327,9 +327,9 @@ npm install -g @sleepinsummer/database-cli@latest
 Uninstall and clean local configuration:
 
 ```bash
-npm uninstall -g @sleepinsummer/database-cli
+npm uninstall -g agent-database-cli
 npm cache clean --force
-rm -rf ~/.database-cli
+rm -rf ~/.agent-database-cli
 ```
 
 ## License

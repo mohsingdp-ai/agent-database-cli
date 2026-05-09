@@ -2,15 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_CONFIG_PATH, resolveConfigPath, validateConfig } from "../../src/config.js";
 
 describe("config", () => {
-  it("默认读取 ~/.database-cli/config.json", () => {
-    vi.stubEnv("DATABASE_CLI_CONFIG", "");
+  it("默认读取 ~/.agent-database-cli/config.json", () => {
+    vi.stubEnv("AGENT_DATABASE_CLI_CONFIG", "");
     expect(resolveConfigPath()).toBe(DEFAULT_CONFIG_PATH);
     vi.unstubAllEnvs();
   });
 
   it("允许环境变量覆盖配置路径", () => {
-    vi.stubEnv("DATABASE_CLI_CONFIG", "/tmp/database-cli.json");
-    expect(resolveConfigPath()).toBe("/tmp/database-cli.json");
+    vi.stubEnv("AGENT_DATABASE_CLI_CONFIG", "/tmp/agent-database-cli.json");
+    expect(resolveConfigPath()).toBe("/tmp/agent-database-cli.json");
     vi.unstubAllEnvs();
   });
 

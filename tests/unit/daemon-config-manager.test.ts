@@ -6,7 +6,7 @@ import { DaemonConfigManager } from "../../src/daemon/config-manager.js";
 
 describe("daemon config manager", () => {
   it("配置文件内容变化后重新加载 manager", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "database-cli-config-"));
+    const dir = await mkdtemp(join(tmpdir(), "agent-database-cli-config-"));
     const configPath = join(dir, "config.json");
     await writeConfig(configPath, "one");
 

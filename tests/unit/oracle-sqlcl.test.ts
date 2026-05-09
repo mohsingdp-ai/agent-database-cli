@@ -26,7 +26,7 @@ describe("oracle sqlcl adapter", () => {
     mkdtempMock.mockReset();
     writeFileMock.mockReset();
     rmMock.mockReset();
-    mkdtempMock.mockResolvedValue("/tmp/database-cli-sqlcl-test");
+    mkdtempMock.mockResolvedValue("/tmp/agent-database-cli-sqlcl-test");
     writeFileMock.mockResolvedValue(undefined);
     rmMock.mockResolvedValue(undefined);
   });

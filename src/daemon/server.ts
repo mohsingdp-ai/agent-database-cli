@@ -75,7 +75,7 @@ async function start(): Promise<void> {
       await chmod(SOCKET_PATH, 0o600);
     }
     await writeFile(PID_PATH, String(process.pid), "utf8");
-    process.stdout.write(`database-cli daemon started: ${SOCKET_PATH}\n`);
+    process.stdout.write(`agent-database-cli daemon started: ${SOCKET_PATH}\n`);
     touchDaemonIdleTimer();
   });
 

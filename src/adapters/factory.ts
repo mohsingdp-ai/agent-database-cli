@@ -15,10 +15,10 @@ export function createAdapter(config: DatabaseConfig, url = config.url): Databas
     case "redis":
       return new RedisAdapter(url, config.redisCluster);
     case "oracle":
-      if (config.oracleDriver === "sqlcl") {
-        return new OracleSqlclAdapter(url, config.sqlclPath, config.javaHome);
+      if (config.oracleDriver === "oracledb") {
+        return new OracleAdapter(url);
       }
-      return new OracleAdapter(url);
+      return new OracleSqlclAdapter(url, config.sqlclPath, config.javaHome);
     case "mongodb":
       return new MongoDbAdapter(url, config.database);
     default:

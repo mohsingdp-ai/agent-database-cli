@@ -33,7 +33,7 @@ What it can do:
 - Enable read-only mode and command blocklists per database configuration
 - Auto-start the local daemon on demand; the daemon exits after `300` idle seconds by default
 - Keep connections alive through the local daemon; each database connection is released after `180` idle seconds by default
-- Switch Oracle between `oracledb` and SQLcl drivers
+- Oracle uses SQLcl by default; native `oracle`/`oracledb` drivers can be selected explicitly when Oracle Instant Client is available
 - Never store or print unmasked passwords, tokens, or secrets
 - Use named pipes on Windows and Unix sockets on macOS/Linux for the daemon
 
@@ -45,7 +45,7 @@ Driver configuration table:
 | PostgreSQL | `postgres` | npm package `pg` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
 | Redis standalone | `redis` | npm package `redis` | Configure `url` only | `readonly`, `blacklist`, `keepAliveSeconds` |
 | Redis cluster | `redis` | npm package `redis` | Configure both `url` and `redisCluster.nodes` | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Oracle | `oracle` | npm package `oracledb` | `oracleDriver: "oracledb" \| "sqlcl"`; SQLcl mode can configure `sqlclPath` and `javaHome`. SQLcl is recommended for older Oracle versions | `readonly`, `blacklist`, `keepAliveSeconds` |
+| Oracle | `oracle` | SQLcl | `oracleDriver: "sqlcl" \| "oracle" \| "oracledb"`; defaults to SQLcl when omitted. Native drivers require Oracle Instant Client | `readonly`, `blacklist`, `keepAliveSeconds` |
 | MongoDB | `mongodb` | npm package `mongodb` | Not switchable yet; `database` can be configured as the default database | `readonly`, `blacklist`, `keepAliveSeconds` |
 
 ## Installation
@@ -108,7 +108,7 @@ The configuration file is an object. Each key under `databases` is a database co
 - `readonly`: Whether read-only mode is enabled, default `true`; only explicitly set `false` when write access is really required
 - `blacklist`: Command blocklist array, case-insensitive
 - `keepAliveSeconds`: Idle release timeout in seconds for a single database connection, default `180`
-- `oracleDriver`: Oracle driver, supports `oracledb` or `sqlcl`
+- `oracleDriver`: Oracle driver, supports `sqlcl`, `oracle`, or `oracledb`; defaults to `sqlcl` when omitted
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
 - `javaHome`: Optional `JAVA_HOME` used by SQLcl
 
@@ -300,7 +300,7 @@ Recommended for a dedicated writable connection:
 
 Official link: https://www.oracle.com/database/sqldeveloper/technologies/sqlcl/
 
-Oracle uses the npm package `oracledb` by default. If the target Oracle version is older, Thin mode compatibility errors such as `NJS-138` may appear. In that case, switch a single Oracle connection to SQLcl:
+Oracle uses SQLcl by default, avoiding a mandatory Oracle Instant Client dependency and improving compatibility with older Oracle versions such as Oracle 11. You may omit `oracleDriver` or set it explicitly:
 
 ```json
 {
@@ -331,6 +331,19 @@ npm uninstall -g agent-database-cli
 npm cache clean --force
 rm -rf ~/.agent-database-cli
 ```
+
+
+## Rust refactor notes
+
+A Rust CLI scaffold has been added. The current binary is `agent-database-cli-rs`:
+
+```bash
+npm run build:rust
+npm run dev:rust -- list
+npm run dev:rust -- daemon status
+```
+
+Oracle keeps two first-class drivers: omitting `oracleDriver` uses SQLcl; native `oracle`/`oracledb` drivers remain available when Oracle Instant Client is installed. The Rust version now includes local daemon protocol, config reload, connection reuse, idle cleanup, Redis Cluster and SSH tunneling. The default entry still stays on the Node implementation until integration coverage is complete.
 
 ## License
 

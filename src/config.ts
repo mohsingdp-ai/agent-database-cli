@@ -55,8 +55,8 @@ function validateDatabaseConfig(name: string, db: DatabaseConfig): void {
     if (db.type !== "oracle") {
       throw new Error(`数据库配置 ${name} 只有 oracle 类型允许配置 oracleDriver`);
     }
-    if (db.oracleDriver !== "oracledb" && db.oracleDriver !== "sqlcl") {
-      throw new Error(`数据库配置 ${name} 的 oracleDriver 只支持 oracledb 或 sqlcl`);
+    if (db.oracleDriver !== "oracle" && db.oracleDriver !== "oracledb" && db.oracleDriver !== "sqlcl") {
+      throw new Error(`数据库配置 ${name} 的 oracleDriver 只支持 oracle、oracledb 或 sqlcl`);
     }
   }
   if (db.sqlclPath !== undefined && typeof db.sqlclPath !== "string") {

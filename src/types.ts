@@ -8,7 +8,7 @@ export interface DatabaseConfig {
   redisCluster?: RedisClusterConfig;
   sshTunnel?: SshTunnelConfig;
   database?: string;
-  oracleDriver?: "oracledb" | "sqlcl";
+  oracleDriver?: "oracle" | "oracledb" | "sqlcl";
   sqlclPath?: string;
   javaHome?: string;
   readonly?: boolean;

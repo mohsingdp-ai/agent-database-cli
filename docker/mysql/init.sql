@@ -1,6 +1,0 @@
-CREATE TABLE IF NOT EXISTS users (
-  id INT PRIMARY KEY AUTO_INCREMENT,
-  name VARCHAR(64) NOT NULL
-);
-
-INSERT INTO users (name) VALUES ('alice');

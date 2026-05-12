@@ -1,0 +1,164 @@
+name: Publish npm
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish-binaries:
+    name: Publish ${{ matrix.package }}
+    runs-on: ${{ matrix.runner }}
+    environment: npm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            package: linux-x64
+            os: linux
+            cpu: x64
+            binary: agent-database-cli
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-latest
+            package: linux-arm64
+            os: linux
+            cpu: arm64
+            binary: agent-database-cli
+          - target: x86_64-apple-darwin
+            runner: macos-14
+            package: darwin-x64
+            os: darwin
+            cpu: x64
+            binary: agent-database-cli
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            package: darwin-arm64
+            os: darwin
+            cpu: arm64
+            binary: agent-database-cli
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            package: win32-x64
+            os: win32
+            cpu: x64
+            binary: agent-database-cli.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm
+        shell: bash
+        run: npm install -g npm@11.5.1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux ARM64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Configure Linux ARM64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
+      - name: Build binary
+        run: cargo build --release --bin agent-database-cli --target ${{ matrix.target }}
+
+      - name: Stage binary package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          PKG_DIR="packages/${{ matrix.package }}"
+          mkdir -p "$PKG_DIR/bin"
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "$PKG_DIR/bin/${{ matrix.binary }}"
+          chmod +x "$PKG_DIR/bin/${{ matrix.binary }}" || true
+          sed \
+            -e "s#__NAME__#@agent-database-cli/${{ matrix.package }}#g" \
+            -e "s#__VERSION__#${VERSION}#g" \
+            -e "s#__TARGET__#${{ matrix.target }}#g" \
+            -e "s#__OS__#${{ matrix.os }}#g" \
+            -e "s#__CPU__#${{ matrix.cpu }}#g" \
+            npm/package-template.json > "$PKG_DIR/package.json"
+
+      - name: Publish binary package
+        shell: bash
+        working-directory: packages/${{ matrix.package }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('../../package.json').version")"
+          fi
+          PACKAGE="@agent-database-cli/${{ matrix.package }}"
+          if npm publish --access public; then
+            exit 0
+          fi
+          if [ "$(npm view "${PACKAGE}@${VERSION}" version 2>/dev/null || true)" = "${VERSION}" ]; then
+            echo "${PACKAGE}@${VERSION} already published, skip"
+            exit 0
+          fi
+          exit 1
+
+  publish-main:
+    name: Publish main package
+    runs-on: ubuntu-latest
+    environment: npm
+    needs: publish-binaries
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Upgrade npm
+        run: npm install -g npm@11.5.1
+
+      - name: Install main package dependencies
+        run: npm ci --omit=optional
+
+      - name: Publish main package
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(node -p "require('./package.json').version")"
+          fi
+          PACKAGE="agent-database-cli"
+          if npm publish --access public; then
+            exit 0
+          fi
+          if [ "$(npm view "${PACKAGE}@${VERSION}" version 2>/dev/null || true)" = "${VERSION}" ]; then
+            echo "${PACKAGE}@${VERSION} already published, skip"
+            exit 0
+          fi
+          exit 1

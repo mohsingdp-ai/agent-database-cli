@@ -3,10 +3,20 @@
   "version": "__VERSION__",
   "description": "Platform binary for agent-database-cli (__TARGET__)",
   "license": "MIT",
-  "os": ["__OS__"],
-  "cpu": ["__CPU__"],
-  "files": ["bin"],
+  "os": [
+    "__OS__"
+  ],
+  "cpu": [
+    "__CPU__"
+  ],
+  "files": [
+    "bin"
+  ],
   "publishConfig": {
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sleepinginsummer/database-cli"
   }
 }

@@ -11,7 +11,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License MIT">
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
-  <img src="https://img.shields.io/badge/Windows%20%7C%20Linux%20%7C%20macOS-supported-0078D6" alt="Windows/Linux/macOS">
+  <img src="https://img.shields.io/badge/sys-win%2Fmac%2Flinux-0078D6" alt="sys win/mac/linux">
   <img src="https://img.shields.io/badge/release-v0.2.12-blue" alt="release v0.2.12">
 </p>
 
@@ -54,6 +54,7 @@ Driver configuration table:
 
 - Node.js `>= 20`
 - npm `>= 10`
+- System support: Windows / macOS / Linux
 - The matching Rust binary subpackage is installed automatically for your platform. Supported targets: macOS x64/arm64, Linux x64/arm64, Windows x64
 - Local network access to the target database
 - Docker and Docker Compose if you run integration tests

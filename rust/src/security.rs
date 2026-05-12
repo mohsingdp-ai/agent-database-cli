@@ -17,6 +17,7 @@ static SQL_WRITE_COMMANDS: &[&str] = &[
 static REDIS_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         "get",
+        "ping",
         "mget",
         "exists",
         "ttl",
@@ -265,4 +266,14 @@ fn get_mongo_command_name(command: &str) -> Result<String> {
         .next()
         .cloned()
         .ok_or_else(|| anyhow::anyhow!("MongoDB 命令 JSON 不能为空"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redis_ping_is_read_only() {
+        assert!(is_read_only_command(&DatabaseType::Redis, "PING").unwrap());
+    }
 }

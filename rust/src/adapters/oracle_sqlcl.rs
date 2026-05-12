@@ -29,12 +29,12 @@ impl OracleSqlclAdapter {
         fs::create_dir_all(&dir)?;
         let script_path = dir.join("command.sql");
         fs::write(&script_path, self.build_script(command, &markers))?;
-        let result = self.spawn_sqlcl(&script_path);
+        let result = self.spawn_sqlcl(&script_path, &markers);
         let _ = fs::remove_dir_all(&dir);
         result
     }
 
-    fn spawn_sqlcl(&self, script_path: &PathBuf) -> Result<QueryResult> {
+    fn spawn_sqlcl(&self, script_path: &PathBuf, markers: &Markers) -> Result<QueryResult> {
         let mut command = Command::new(&self.sqlcl_path);
         command
             .arg("-S")
@@ -55,10 +55,17 @@ impl OracleSqlclAdapter {
             .filter(|v| !v.is_empty())
             .collect::<Vec<_>>()
             .join("\n");
+        if debug_enabled() {
+            eprintln!(
+                "[rust-db-cli] sqlcl stdout={} stderr={}",
+                mask_secret(stdout.trim()),
+                mask_secret(stderr.trim())
+            );
+        }
         if contains_sqlcl_error(&combined) || !output.status.success() {
             anyhow::bail!("{}", mask_secret(&format!("SQLcl 执行失败: {combined}")));
         }
-        parse_sqlcl_output(&stdout)
+        parse_sqlcl_output(&stdout, &markers)
     }
 
     fn build_script(&self, command: &str, markers: &Markers) -> String {
@@ -67,8 +74,8 @@ impl OracleSqlclAdapter {
 
     fn build_connect_string(&self) -> String {
         let parsed = Url::parse(&self.url).expect("Oracle URL 已在配置阶段校验");
-        let user = parsed.username();
-        let password = quote_password(parsed.password().unwrap_or(""));
+        let user = percent_decode(parsed.username());
+        let password = quote_password(&percent_decode(parsed.password().unwrap_or("")));
         let service = parsed.path().trim_start_matches('/');
         format!(
             "{user}/{password}@//{}:{}/{}",
@@ -131,6 +138,12 @@ fn normalize_sqlcl_sql(command: &str) -> String {
 fn quote_password(password: &str) -> String {
     format!("\"{}\"", password.replace('"', "\\\""))
 }
+fn percent_decode(value: &str) -> String {
+    url::form_urlencoded::parse(value.as_bytes())
+        .next()
+        .map(|(value, _)| value.into_owned())
+        .unwrap_or_else(|| value.to_string())
+}
 fn strip_ansi(value: &str) -> String {
     regex::Regex::new(r"\x1b\[[0-9;]*m")
         .unwrap()
@@ -142,26 +155,138 @@ fn contains_sqlcl_error(value: &str) -> bool {
         .iter()
         .any(|item| value.contains(item))
 }
-fn parse_sqlcl_output(stdout: &str) -> Result<QueryResult> {
-    let json_start = stdout.find('[').or_else(|| stdout.find('{'));
+fn debug_enabled() -> bool {
+    std::env::var("AGENT_DATABASE_CLI_DEBUG").is_ok()
+}
+fn parse_sqlcl_output(stdout: &str, markers: &Markers) -> Result<QueryResult> {
+    let payload = extract_marked_output(stdout, markers).unwrap_or(stdout);
+    let json_start = find_json_start(payload);
     if let Some(start) = json_start {
-        let slice = &stdout[start..];
-        if let Ok(value) = serde_json::from_str::<Value>(slice.trim()) {
-            let rows = value.as_array().cloned().unwrap_or_else(|| vec![value]);
-            return Ok(QueryResult {
-                row_count: Some(rows.len() as u64),
-                rows,
-                fields: None,
-            });
+        let slice = &payload[start..];
+        if let Some(value) = parse_first_json_value(slice) {
+            return Ok(sqlcl_json_to_query_result(value));
         }
     }
+    let text = payload.trim();
     Ok(QueryResult {
-        rows: vec![serde_json::json!({ "output": stdout.trim() })],
+        rows: vec![serde_json::json!({ "output": text })],
         fields: Some(vec!["output".to_string()]),
-        row_count: if stdout.trim().is_empty() {
-            Some(0)
-        } else {
-            Some(1)
-        },
+        row_count: if text.is_empty() { Some(0) } else { Some(1) },
     })
+}
+
+fn extract_marked_output<'a>(stdout: &'a str, markers: &Markers) -> Option<&'a str> {
+    let begin = stdout.find(&markers.begin)? + markers.begin.len();
+    let end = stdout[begin..].find(&markers.end)? + begin;
+    Some(&stdout[begin..end])
+}
+
+fn parse_first_json_value(value: &str) -> Option<Value> {
+    serde_json::Deserializer::from_str(value.trim())
+        .into_iter::<Value>()
+        .next()
+        .and_then(Result::ok)
+}
+
+fn find_json_start(value: &str) -> Option<usize> {
+    match (value.find('{'), value.find('[')) {
+        (Some(object), Some(array)) => Some(object.min(array)),
+        (Some(object), None) => Some(object),
+        (None, Some(array)) => Some(array),
+        (None, None) => None,
+    }
+}
+
+fn sqlcl_json_to_query_result(value: Value) -> QueryResult {
+    if let Some(result) = value
+        .get("results")
+        .and_then(Value::as_array)
+        .and_then(|results| results.first())
+    {
+        let rows = result
+            .get("items")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let fields = result
+            .get("columns")
+            .and_then(Value::as_array)
+            .map(|columns| {
+                columns
+                    .iter()
+                    .filter_map(|column| {
+                        column
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .map(ToString::to_string)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .filter(|fields| !fields.is_empty());
+        return QueryResult {
+            row_count: Some(rows.len() as u64),
+            rows,
+            fields,
+        };
+    }
+    let rows = value.as_array().cloned().unwrap_or_else(|| vec![value]);
+    QueryResult {
+        row_count: Some(rows.len() as u64),
+        rows,
+        fields: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_sqlcl_output_uses_markers_and_sqlcl_json_shape() {
+        let markers = Markers {
+            begin: "__BEGIN__".to_string(),
+            end: "__END__".to_string(),
+        };
+        let stdout = r#"
+SQLcl: Release 26
+__BEGIN__
+{"results":[{"columns":[{"name":"ONE","type":"NUMBER"}],"items":[{"one":1}]}]}
+__END__
+Disconnected from Oracle Database
+"#;
+
+        let result = parse_sqlcl_output(stdout, &markers).unwrap();
+
+        assert_eq!(result.row_count, Some(1));
+        assert_eq!(result.fields, Some(vec!["ONE".to_string()]));
+        assert_eq!(result.rows, vec![serde_json::json!({ "one": 1 })]);
+    }
+
+    #[test]
+    fn parse_sqlcl_output_ignores_trailing_text_after_json() {
+        let markers = Markers {
+            begin: "__BEGIN__".to_string(),
+            end: "__END__".to_string(),
+        };
+        let stdout = "__BEGIN__\n[{\"ONE\":1}]\n1 row selected.\n__END__";
+
+        let result = parse_sqlcl_output(stdout, &markers).unwrap();
+
+        assert_eq!(result.row_count, Some(1));
+        assert_eq!(result.rows, vec![serde_json::json!({ "ONE": 1 })]);
+    }
+
+    #[test]
+    fn build_connect_string_decodes_url_credentials() {
+        let adapter = OracleSqlclAdapter::new(
+            "oracle://test%40user:p%40ss%2Fword@127.0.0.1:1521/service".to_string(),
+            "sql".to_string(),
+            None,
+        );
+
+        assert_eq!(
+            adapter.build_connect_string(),
+            "test@user/\"p@ss/word\"@//127.0.0.1:1521/service"
+        );
+    }
 }

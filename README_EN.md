@@ -54,6 +54,7 @@ Driver configuration table:
 
 - Node.js `>= 20`
 - npm `>= 10`
+- The matching Rust binary subpackage is installed automatically for your platform
 - Local network access to the target database
 - Docker and Docker Compose if you run integration tests
 - SQLcl and Java installed locally if Oracle uses SQLcl
@@ -335,7 +336,7 @@ rm -rf ~/.agent-database-cli
 
 ## Rust refactor notes
 
-A Rust CLI scaffold has been added. The current binary is `agent-database-cli-rs`:
+A Rust CLI scaffold has been added. The current binary is `agent-database-cli`:
 
 ```bash
 npm run build:rust
@@ -343,7 +344,7 @@ npm run dev:rust -- list
 npm run dev:rust -- daemon status
 ```
 
-Oracle keeps two first-class drivers: omitting `oracleDriver` uses SQLcl; native `oracle`/`oracledb` drivers remain available when Oracle Instant Client is installed. The Rust version now includes local daemon protocol, config reload, connection reuse, idle cleanup, Redis Cluster and SSH tunneling. The default entry still stays on the Node implementation until integration coverage is complete.
+Oracle keeps two first-class drivers: omitting `oracleDriver` uses SQLcl; native `oracle`/`oracledb` drivers remain available when Oracle Instant Client is installed. The default entry is now the native Rust CLI. Windows, Linux and macOS binaries are distributed through npm platform subpackages. Oracle defaults to SQLcl; native Oracle drivers must be selected explicitly.
 
 ## License
 

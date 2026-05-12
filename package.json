@@ -1,53 +1,37 @@
 {
   "name": "agent-database-cli",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "统一数据库命令行工具，支持只读、黑名单和本地连接守护进程。",
   "type": "module",
   "bin": {
-    "agent-database-cli": "dist/cli.js"
+    "agent-database-cli": "bin/agent-database-cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:rust": "cargo build --release --bin agent-database-cli-rs",
-    "dev:rust": "cargo run --bin agent-database-cli-rs --",
-    "dev": "tsx src/cli.ts",
-    "prepack": "npm run build",
-    "test": "vitest run",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "AGENT_DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration --exclude tests/integration/oracle.test.ts",
-    "test:integration:oracle": "AGENT_DATABASE_CLI_CONFIG=config/docker-test.json vitest run tests/integration/oracle.test.ts"
+    "build": "cargo build --release --bin agent-database-cli",
+    "build:rust": "cargo build --release --bin agent-database-cli",
+    "dev": "cargo run --bin agent-database-cli --",
+    "dev:rust": "cargo run --bin agent-database-cli --",
+    "test": "cargo test",
+    "check": "cargo check --bin agent-database-cli"
   },
   "files": [
-    "dist",
+    "bin",
     "README.md",
     "README_EN.md",
     "AI_INSTALL.md",
     "SKILL.md",
     "LICENSE",
-    "config/docker-test.json",
-    "Cargo.toml",
-    "Cargo.lock",
-    "rust"
+    "config/docker-test.json"
   ],
+  "optionalDependencies": {
+    "@agent-database-cli/darwin-arm64": "0.2.9",
+    "@agent-database-cli/darwin-x64": "0.2.9",
+    "@agent-database-cli/linux-x64": "0.2.9",
+    "@agent-database-cli/linux-arm64": "0.2.9",
+    "@agent-database-cli/win32-x64": "0.2.9"
+  },
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "commander": "^12.1.0",
-    "mongodb": "^6.20.0",
-    "mysql2": "^3.15.3",
-    "oracledb": "^6.10.0",
-    "pg": "^8.16.3",
-    "redis": "^4.7.1",
-    "ssh2": "^1.17.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.10.2",
-    "@types/pg": "^8.15.5",
-    "@types/ssh2": "^1.15.5",
-    "tsx": "^4.20.6",
-    "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
   },
   "engines": {
     "node": ">=20"

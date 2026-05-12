@@ -8,12 +8,12 @@ pub fn runtime_dir() -> Result<PathBuf> {
 }
 
 pub fn pid_path() -> Result<PathBuf> {
-    Ok(runtime_dir()?.join("agent-database-cli-rs.pid"))
+    Ok(runtime_dir()?.join("agent-database-cli.pid"))
 }
 
 #[cfg(unix)]
 pub fn socket_path() -> Result<PathBuf> {
-    Ok(runtime_dir()?.join("agent-database-cli-rs.sock"))
+    Ok(runtime_dir()?.join("agent-database-cli.sock"))
 }
 
 #[cfg(windows)]
@@ -23,5 +23,5 @@ pub fn socket_path_string() -> Result<String> {
     let mut hasher = Sha1::new();
     hasher.update(home.to_string_lossy().as_bytes());
     let digest = format!("{:x}", hasher.finalize());
-    Ok(format!(r"\\.\pipe\agent-database-cli-rs-{}", &digest[..12]))
+    Ok(format!(r"\\.\pipe\agent-database-cli-{}", &digest[..12]))
 }

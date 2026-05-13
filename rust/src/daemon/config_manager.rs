@@ -1,8 +1,7 @@
 use crate::config::{load_config, resolve_config_path};
 use crate::daemon::connection_manager::ConnectionManager;
 use anyhow::Result;
-use serde_json::Value;
-use std::{fs, path::PathBuf, time::SystemTime};
+use std::{fs, path::PathBuf, sync::Arc, time::SystemTime};
 
 #[derive(Clone)]
 struct ConfigSnapshot {
@@ -12,7 +11,7 @@ struct ConfigSnapshot {
 }
 
 pub struct DaemonConfigManager {
-    manager: Option<ConnectionManager>,
+    manager: Option<Arc<ConnectionManager>>,
     snapshot: Option<ConfigSnapshot>,
 }
 
@@ -27,7 +26,7 @@ impl DaemonConfigManager {
     pub async fn get_manager(
         &mut self,
         config_path: Option<String>,
-    ) -> Result<&mut ConnectionManager> {
+    ) -> Result<Arc<ConnectionManager>> {
         let path = config_path
             .map(PathBuf::from)
             .unwrap_or(resolve_config_path()?);
@@ -41,18 +40,15 @@ impl DaemonConfigManager {
         {
             self.replace_manager(snapshot).await?;
         }
-        Ok(self.manager.as_mut().expect("配置管理器已初始化"))
+        Ok(self.manager.as_ref().expect("配置管理器已初始化").clone())
     }
 
-    pub fn status(&self) -> Value {
-        self.manager
-            .as_ref()
-            .map(ConnectionManager::status)
-            .unwrap_or_else(|| serde_json::json!({ "connections": [] }))
+    pub fn current_manager(&self) -> Option<Arc<ConnectionManager>> {
+        self.manager.clone()
     }
 
     pub async fn close_all(&mut self) -> Result<()> {
-        if let Some(manager) = &mut self.manager {
+        if let Some(manager) = &self.manager {
             manager.close_all().await?;
         }
         self.manager = None;
@@ -61,7 +57,7 @@ impl DaemonConfigManager {
     }
 
     pub async fn cleanup_idle(&mut self) -> Result<()> {
-        if let Some(manager) = &mut self.manager {
+        if let Some(manager) = &self.manager {
             manager.cleanup_idle().await?;
         }
         Ok(())
@@ -70,7 +66,7 @@ impl DaemonConfigManager {
     async fn replace_manager(&mut self, snapshot: ConfigSnapshot) -> Result<()> {
         self.close_all().await?;
         let config = load_config(Some(snapshot.path.clone()))?;
-        self.manager = Some(ConnectionManager::new(config));
+        self.manager = Some(Arc::new(ConnectionManager::new(config)));
         self.snapshot = Some(snapshot);
         Ok(())
     }

@@ -12,8 +12,19 @@ static SQL_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 });
 static SQL_WRITE_COMMANDS: &[&str] = &[
     "insert", "update", "delete", "merge", "replace", "drop", "truncate", "alter", "create",
-    "grant", "revoke",
+    "grant", "revoke", "call", "copy", "load", "vacuum", "analyze",
 ];
+static SQL_WRITE_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+    [
+        // PostgreSQL SELECT INTO 会创建新表，首词仍是 select，不能按普通查询放行。
+        r"(?i)(^|[^\p{L}\p{N}_$])select\s+.+\s+into\s+[^\s(]",
+        // CTE 后接写操作时首词是 with，也需要按写操作拒绝。
+        r"(?i)(^|[^\p{L}\p{N}_$])with\s+.+\)\s*(insert|update|delete|merge)\b",
+    ]
+    .into_iter()
+    .map(|pattern| Regex::new(pattern).expect("SQL 写入模式正则必须合法"))
+    .collect()
+});
 static REDIS_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         "get",
@@ -24,7 +35,6 @@ static REDIS_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "pttl",
         "type",
         "strlen",
-        "keys",
         "scan",
         "hget",
         "hgetall",
@@ -50,16 +60,18 @@ static REDIS_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 static MONGO_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         "find",
-        "findOne",
+        "findone",
         "aggregate",
         "count",
-        "countDocuments",
-        "estimatedDocumentCount",
+        "countdocuments",
+        "estimateddocumentcount",
         "distinct",
     ]
     .into_iter()
     .collect()
 });
+static MONGO_AGGREGATE_WRITE_STAGES: Lazy<HashSet<&'static str>> =
+    Lazy::new(|| ["$out", "$merge"].into_iter().collect());
 
 pub fn normalize_command(command: &str) -> String {
     command.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -129,19 +141,53 @@ pub fn is_read_only_command(db_type: &DatabaseType, command: &str) -> Result<boo
     let head = get_command_head(command, db_type)?;
     match db_type {
         DatabaseType::Redis => Ok(REDIS_READ_COMMANDS.contains(head.as_str())),
-        DatabaseType::Mongodb => {
-            Ok(MONGO_READ_COMMANDS.contains(get_mongo_command_name(command)?.as_str()))
-        }
+        DatabaseType::Mongodb => is_mongo_read_only_command(command),
         DatabaseType::Mysql | DatabaseType::Postgres | DatabaseType::Oracle => {
             if !SQL_READ_COMMANDS.contains(head.as_str()) {
                 return Ok(false);
             }
             let sanitized = strip_sql_literals_and_comments(command);
-            Ok(!SQL_WRITE_COMMANDS
+            Ok(!SQL_WRITE_PATTERNS
                 .iter()
-                .any(|keyword| has_blacklisted_keyword(&sanitized, keyword)))
+                .any(|pattern| pattern.is_match(&sanitized))
+                && !SQL_WRITE_COMMANDS
+                    .iter()
+                    .any(|keyword| has_blacklisted_keyword(&sanitized, keyword)))
         }
     }
+}
+
+fn is_mongo_read_only_command(command: &str) -> Result<bool> {
+    let parsed: Value = serde_json::from_str(command)
+        .map_err(|_| anyhow::anyhow!("MongoDB 命令必须是合法 JSON"))?;
+    let object = parsed
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须是对象"))?;
+    let (operation, payload) = object
+        .iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令 JSON 不能为空"))?;
+    let operation = operation.to_lowercase();
+    if !MONGO_READ_COMMANDS.contains(operation.as_str()) {
+        return Ok(false);
+    }
+    if operation == "aggregate" && mongo_payload_has_write_stage(payload) {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn mongo_payload_has_write_stage(value: &Value) -> bool {
+    let Some(pipeline) = value.get("pipeline").and_then(Value::as_array) else {
+        return false;
+    };
+    pipeline.iter().any(|stage| {
+        stage.as_object().is_some_and(|object| {
+            object
+                .keys()
+                .any(|key| MONGO_AGGREGATE_WRITE_STAGES.contains(key.as_str()))
+        })
+    })
 }
 
 fn strip_sql_literals_and_comments(command: &str) -> String {
@@ -195,7 +241,7 @@ fn strip_sql_literals_and_comments(command: &str) -> String {
 }
 
 fn push_spaces(result: &mut String, count: usize) {
-    result.extend(std::iter::repeat(' ').take(count));
+    result.extend(std::iter::repeat_n(' ', count));
 }
 
 fn find_line_end(chars: &[char], start: usize) -> usize {
@@ -275,5 +321,55 @@ mod tests {
     #[test]
     fn redis_ping_is_read_only() {
         assert!(is_read_only_command(&DatabaseType::Redis, "PING").unwrap());
+    }
+
+    #[test]
+    fn redis_keys_is_not_read_only() {
+        assert!(!is_read_only_command(&DatabaseType::Redis, "KEYS *").unwrap());
+    }
+
+    #[test]
+    fn postgres_select_into_is_not_read_only() {
+        assert!(!is_read_only_command(
+            &DatabaseType::Postgres,
+            "select * into new_table from users"
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn cte_followed_by_insert_is_not_read_only() {
+        assert!(!is_read_only_command(
+            &DatabaseType::Postgres,
+            "with rows as (select * from users) insert into audit select * from rows"
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn mongo_aggregate_with_out_is_not_read_only() {
+        assert!(!is_read_only_command(
+            &DatabaseType::Mongodb,
+            r#"{"aggregate":{"collection":"users","pipeline":[{"$match":{}},{"$out":"backup"}]}}"#
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn mongo_aggregate_with_merge_is_not_read_only() {
+        assert!(!is_read_only_command(
+            &DatabaseType::Mongodb,
+            r#"{"aggregate":{"collection":"users","pipeline":[{"$merge":{"into":"backup"}}]}}"#
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn mongo_find_is_read_only() {
+        assert!(is_read_only_command(
+            &DatabaseType::Mongodb,
+            r#"{"find":{"collection":"users","filter":{}}}"#
+        )
+        .unwrap());
     }
 }

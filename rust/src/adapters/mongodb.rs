@@ -211,10 +211,10 @@ fn json_to_document(value: &Value) -> Result<Document> {
     Ok(mongodb::bson::to_document(value)?)
 }
 fn json_to_pipeline(value: &Value) -> Result<Vec<Document>> {
-    Ok(serde_json::from_value::<Vec<Value>>(value.clone())?
+    serde_json::from_value::<Vec<Value>>(value.clone())?
         .into_iter()
         .map(|v| json_to_document(&v))
-        .collect::<Result<Vec<_>>>()?)
+        .collect::<Result<Vec<_>>>()
 }
 fn bson_to_json<T: serde::Serialize>(value: T) -> Value {
     serde_json::to_value(value).unwrap_or(Value::Null)

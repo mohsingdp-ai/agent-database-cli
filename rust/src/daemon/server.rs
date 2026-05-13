@@ -131,7 +131,13 @@ async fn handle_request(
     manager: Arc<Mutex<DaemonConfigManager>>,
 ) -> Result<Value> {
     match request.action {
-        DaemonAction::Status => Ok(manager.lock().await.status()),
+        DaemonAction::Status => {
+            let current = manager.lock().await.current_manager();
+            match current {
+                Some(current) => Ok(current.status().await),
+                None => Ok(json!({ "connections": [] })),
+            }
+        }
         DaemonAction::Stop => {
             tokio::spawn(async {
                 sleep(Duration::from_millis(20)).await;
@@ -146,8 +152,10 @@ async fn handle_request(
             let db = request
                 .db
                 .ok_or_else(|| anyhow::anyhow!("daemon 请求必须提供 db"))?;
-            let mut guard = manager.lock().await;
-            let current = guard.get_manager(request.config_path).await?;
+            let current = {
+                let mut guard = manager.lock().await;
+                guard.get_manager(request.config_path).await?
+            };
             match request.action {
                 DaemonAction::Test => current.test(&db).await,
                 DaemonAction::Execute => {

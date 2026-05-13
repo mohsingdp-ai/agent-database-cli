@@ -12,7 +12,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
   <img src="https://img.shields.io/badge/sys-win%2Fmac%2Flinux-0078D6" alt="sys win/mac/linux">
-  <img src="https://img.shields.io/badge/release-v0.2.12-blue" alt="release v0.2.12">
+  <img src="https://img.shields.io/badge/release-v0.2.17-blue" alt="release v0.2.17">
 </p>
 
 [AI One-Click Installation](#ai-one-click-installation) · [Installation](#installation) · [Configuration](#configuration) · [Permission Configuration](#permission-configuration) · [Oracle SQLcl](#oracle-sqlcl) · [License](#license) · [Friendly Links](#friendly-links)
@@ -29,7 +29,7 @@ What it can do:
 
 - List currently supported database types and locally configured connections
 - Execute SQL, Redis commands, or MongoDB JSON commands against a specified database
-- Query database metadata such as tables, columns, collections, and Redis keys
+- Query database metadata such as tables, columns, collections, and Redis keys. Redis keys metadata uses cursor-based `SCAN` instead of blocking `KEYS`
 - Enable read-only mode and command blocklists per database configuration
 - Auto-start the local daemon on demand; the daemon exits after `300` idle seconds by default
 - Keep connections alive through the local daemon; each database connection is released after `180` idle seconds by default
@@ -245,6 +245,7 @@ It is recommended to use both `readonly` and `blacklist` together for permission
 
 - The default value is `true`
 - When `readonly` is omitted, the connection is still treated as read-only
+- Read-only mode also rejects queries with write semantics, such as PostgreSQL `SELECT INTO` and MongoDB aggregate `$out` / `$merge`
 - It is recommended to keep all day-to-day query connections read-only by default
 - When data changes are needed, let AI generate the SQL or command first, then execute it after your confirmation
 - Only dedicated writable connections should explicitly set `readonly: false`
@@ -274,13 +275,13 @@ Common high-risk SQL for MySQL / PostgreSQL / Oracle:
 Common high-risk Redis commands:
 
 ```json
-["flushall", "flushdb", "del", "unlink", "set", "mset", "expire", "rename", "hset", "lpush", "rpush", "sadd", "zadd"]
+["flushall", "flushdb", "del", "unlink", "set", "mset", "expire", "rename", "hset", "lpush", "rpush", "sadd", "zadd", "keys"]
 ```
 
 Common high-risk MongoDB commands:
 
 ```json
-["insertOne", "insertMany", "updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany", "findAndModify", "findOneAndUpdate", "findOneAndDelete", "drop", "dropDatabase", "createIndex", "dropIndex"]
+["insertOne", "insertMany", "updateOne", "updateMany", "replaceOne", "deleteOne", "deleteMany", "findAndModify", "findOneAndUpdate", "findOneAndDelete", "drop", "dropDatabase", "createIndex", "dropIndex", "$out", "$merge"]
 ```
 
 ### Recommended Configuration Examples

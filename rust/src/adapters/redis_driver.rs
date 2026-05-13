@@ -3,11 +3,13 @@ use crate::security;
 use crate::types::{MetadataRequest, MetadataType, QueryResult, RedisClusterConfig};
 use anyhow::Result;
 use async_trait::async_trait;
-use redis::{aio::MultiplexedConnection, AsyncCommands, Client, RedisResult, Value as RedisValue};
+use redis::{aio::MultiplexedConnection, Client, RedisResult, Value as RedisValue};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use tokio::time::{timeout, Duration};
 use url::Url;
+
+const REDIS_SCAN_BATCH_SIZE: usize = 500;
 
 pub struct RedisAdapter {
     url: String,
@@ -156,8 +158,7 @@ fn parse_cluster_redirect(message: &str) -> Option<(String, String)> {
 #[async_trait]
 impl DatabaseAdapter for RedisAdapter {
     async fn connect(&mut self) -> Result<()> {
-        if self.redis_cluster.is_some() {
-            let cluster = self.redis_cluster.as_ref().expect("Redis Cluster 配置存在");
+        if let Some(cluster) = &self.redis_cluster {
             if self.cluster_conns.is_empty() {
                 if let Some(map) = &cluster.node_address_map {
                     let first_route = map
@@ -255,12 +256,12 @@ impl DatabaseAdapter for RedisAdapter {
         let keys: Vec<String> = if !self.cluster_conns.is_empty() {
             let mut keys = HashSet::new();
             for conn in self.cluster_conns.values_mut() {
-                let node_keys: Vec<String> = conn.keys(&pattern).await?;
+                let node_keys = scan_keys(conn, &pattern).await?;
                 keys.extend(node_keys);
             }
             keys.into_iter().collect()
         } else {
-            self.conn.as_mut().unwrap().keys(pattern).await?
+            scan_keys(self.conn.as_mut().unwrap(), &pattern).await?
         };
         Ok(QueryResult {
             row_count: Some(keys.len() as u64),
@@ -268,6 +269,27 @@ impl DatabaseAdapter for RedisAdapter {
             rows: keys.into_iter().map(|key| json!({ "key": key })).collect(),
         })
     }
+}
+
+async fn scan_keys(conn: &mut MultiplexedConnection, pattern: &str) -> Result<Vec<String>> {
+    let mut cursor = 0_u64;
+    let mut keys = Vec::new();
+    loop {
+        let (next_cursor, batch): (u64, Vec<String>) = redis::cmd("SCAN")
+            .arg(cursor)
+            .arg("MATCH")
+            .arg(pattern)
+            .arg("COUNT")
+            .arg(REDIS_SCAN_BATCH_SIZE)
+            .query_async(conn)
+            .await?;
+        keys.extend(batch);
+        if next_cursor == 0 {
+            break;
+        }
+        cursor = next_cursor;
+    }
+    Ok(keys)
 }
 
 fn redis_value_to_json(value: RedisValue) -> Value {

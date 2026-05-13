@@ -6,7 +6,9 @@ use crate::types::{AppConfig, DatabaseConfig, MetadataRequest, QueryResult};
 use anyhow::Result;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, Notify};
 
 struct Entry {
     adapter: Box<dyn DatabaseAdapter>,
@@ -15,108 +17,210 @@ struct Entry {
     last_used: Instant,
 }
 
+enum EntrySlot {
+    Ready(Arc<Mutex<Entry>>),
+    Initializing(Arc<Notify>),
+}
+
 pub struct ConnectionManager {
     config: AppConfig,
-    entries: HashMap<String, Entry>,
+    entries: Mutex<HashMap<String, EntrySlot>>,
 }
 
 impl ConnectionManager {
     pub fn new(config: AppConfig) -> Self {
         Self {
             config,
-            entries: HashMap::new(),
+            entries: Mutex::new(HashMap::new()),
         }
     }
 
-    pub async fn test(&mut self, name: &str) -> Result<Value> {
+    pub async fn test(&self, name: &str) -> Result<Value> {
         let entry = self.get_entry(name).await?;
+        let mut entry = entry.lock().await;
         entry.adapter.test().await?;
         entry.last_used = Instant::now();
         Ok(json!({ "ok": true }))
     }
 
-    pub async fn execute(&mut self, name: &str, command: &str) -> Result<QueryResult> {
+    pub async fn execute(&self, name: &str, command: &str) -> Result<QueryResult> {
         let config = get_database_config(&self.config, name)?;
         assert_command_allowed(config, command)?;
         let entry = self.get_entry(name).await?;
+        let mut entry = entry.lock().await;
         let result = entry.adapter.execute(command).await?;
         entry.last_used = Instant::now();
         Ok(result)
     }
 
-    pub async fn metadata(&mut self, name: &str, request: MetadataRequest) -> Result<QueryResult> {
+    pub async fn metadata(&self, name: &str, request: MetadataRequest) -> Result<QueryResult> {
         let entry = self.get_entry(name).await?;
+        let mut entry = entry.lock().await;
         let result = entry.adapter.metadata(request).await?;
         entry.last_used = Instant::now();
         Ok(result)
     }
 
-    pub async fn reset(&mut self, name: &str) -> Result<Value> {
-        if let Some(mut entry) = self.entries.remove(name) {
+    pub async fn reset(&self, name: &str) -> Result<Value> {
+        let entry = match self.entries.lock().await.remove(name) {
+            Some(EntrySlot::Ready(entry)) => Some(entry),
+            Some(EntrySlot::Initializing(notify)) => {
+                notify.notify_waiters();
+                None
+            }
+            None => None,
+        };
+        if let Some(entry) = entry {
+            let mut entry = entry.lock().await;
             entry.adapter.disconnect().await?;
         }
         Ok(json!({ "reset": name }))
     }
 
-    pub async fn close_all(&mut self) -> Result<()> {
-        let names = self.entries.keys().cloned().collect::<Vec<_>>();
-        for name in names {
-            self.reset(&name).await?;
+    pub async fn close_all(&self) -> Result<()> {
+        let entries = self
+            .entries
+            .lock()
+            .await
+            .drain()
+            .filter_map(|(_, slot)| match slot {
+                EntrySlot::Ready(entry) => Some(entry),
+                EntrySlot::Initializing(notify) => {
+                    notify.notify_waiters();
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for entry in entries {
+            let mut entry = entry.lock().await;
+            entry.adapter.disconnect().await?;
         }
         Ok(())
     }
 
-    pub async fn cleanup_idle(&mut self) -> Result<()> {
+    pub async fn cleanup_idle(&self) -> Result<()> {
         let now = Instant::now();
-        let expired = self
-            .entries
-            .iter()
-            .filter_map(|(name, entry)| {
-                let keep_alive =
-                    Duration::from_secs(entry.config.keep_alive_seconds.unwrap_or(180));
-                (now.duration_since(entry.last_used) >= keep_alive).then(|| name.clone())
-            })
-            .collect::<Vec<_>>();
+        let entries = self.entries.lock().await;
+        let mut expired = Vec::new();
+        for (name, slot) in entries.iter() {
+            let EntrySlot::Ready(entry) = slot else {
+                continue;
+            };
+            let Ok(entry) = entry.try_lock() else {
+                continue;
+            };
+            let keep_alive = Duration::from_secs(entry.config.keep_alive_seconds.unwrap_or(180));
+            if now.duration_since(entry.last_used) >= keep_alive {
+                expired.push(name.clone());
+            }
+        }
+        drop(entries);
         for name in expired {
             self.reset(&name).await?;
         }
         Ok(())
     }
 
-    pub fn status(&self) -> Value {
-        json!({
-            "connections": self.entries.iter().map(|(name, entry)| json!({
+    pub async fn status(&self) -> Value {
+        let entries = self.entries.lock().await;
+        let mut connections = Vec::new();
+        for (name, slot) in entries.iter() {
+            let EntrySlot::Ready(entry) = slot else {
+                connections.push(json!({
+                    "name": name,
+                    "initializing": true,
+                }));
+                continue;
+            };
+            let Ok(entry) = entry.try_lock() else {
+                connections.push(json!({
+                    "name": name,
+                    "busy": true,
+                }));
+                continue;
+            };
+            connections.push(json!({
                 "name": name,
                 "type": format!("{:?}", entry.config.db_type).to_lowercase(),
                 "keepAliveSeconds": entry.config.keep_alive_seconds.unwrap_or(180),
                 "sshTunnel": entry.tunnel.is_some(),
-            })).collect::<Vec<_>>()
-        })
+                "busy": false,
+            }));
+        }
+        json!({ "connections": connections })
     }
 
-    async fn get_entry(&mut self, name: &str) -> Result<&mut Entry> {
-        if !self.entries.contains_key(name) {
-            let config = get_database_config(&self.config, name)?.clone();
-            let tunnel = start_ssh_tunnel(&config).await?;
-            let mut adapter_config = config.clone();
-            if let Some(tunnel) = &tunnel {
-                adapter_config.url = tunnel.url.clone();
-                if tunnel.redis_cluster.is_some() {
-                    adapter_config.redis_cluster = tunnel.redis_cluster.clone();
+    async fn get_entry(&self, name: &str) -> Result<Arc<Mutex<Entry>>> {
+        loop {
+            let notify = {
+                let mut entries = self.entries.lock().await;
+                match entries.get(name) {
+                    Some(EntrySlot::Ready(entry)) => return Ok(entry.clone()),
+                    Some(EntrySlot::Initializing(notify)) => notify.clone(),
+                    None => {
+                        let notify = Arc::new(Notify::new());
+                        entries.insert(name.to_string(), EntrySlot::Initializing(notify.clone()));
+                        drop(entries);
+                        return self.initialize_entry(name, notify).await;
+                    }
                 }
-            }
-            let mut adapter = create_adapter(&adapter_config)?;
-            adapter.connect().await?;
-            self.entries.insert(
-                name.to_string(),
-                Entry {
-                    adapter,
-                    config,
-                    tunnel,
-                    last_used: Instant::now(),
-                },
-            );
+            };
+            notify.notified().await;
         }
-        Ok(self.entries.get_mut(name).expect("连接条目已创建"))
     }
+
+    async fn initialize_entry(&self, name: &str, notify: Arc<Notify>) -> Result<Arc<Mutex<Entry>>> {
+        let entry = match create_entry(&self.config, name).await {
+            Ok(entry) => Arc::new(Mutex::new(entry)),
+            Err(error) => {
+                self.remove_initializing_slot(name, &notify).await;
+                notify.notify_waiters();
+                return Err(error);
+            }
+        };
+        let mut entries = self.entries.lock().await;
+        let still_current = matches!(
+            entries.get(name),
+            Some(EntrySlot::Initializing(current)) if Arc::ptr_eq(current, &notify)
+        );
+        if !still_current {
+            drop(entries);
+            entry.lock().await.adapter.disconnect().await?;
+            anyhow::bail!("数据库连接初始化已取消: {name}");
+        }
+        entries.insert(name.to_string(), EntrySlot::Ready(entry.clone()));
+        notify.notify_waiters();
+        Ok(entry)
+    }
+
+    async fn remove_initializing_slot(&self, name: &str, notify: &Arc<Notify>) {
+        let mut entries = self.entries.lock().await;
+        let should_remove = matches!(
+            entries.get(name),
+            Some(EntrySlot::Initializing(current)) if Arc::ptr_eq(current, notify)
+        );
+        if should_remove {
+            entries.remove(name);
+        }
+    }
+}
+
+async fn create_entry(config: &AppConfig, name: &str) -> Result<Entry> {
+    let config = get_database_config(config, name)?.clone();
+    let tunnel = start_ssh_tunnel(&config).await?;
+    let mut adapter_config = config.clone();
+    if let Some(tunnel) = &tunnel {
+        adapter_config.url = tunnel.url.clone();
+        if tunnel.redis_cluster.is_some() {
+            adapter_config.redis_cluster = tunnel.redis_cluster.clone();
+        }
+    }
+    let mut adapter = create_adapter(&adapter_config)?;
+    adapter.connect().await?;
+    Ok(Entry {
+        adapter,
+        config,
+        tunnel,
+        last_used: Instant::now(),
+    })
 }

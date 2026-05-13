@@ -17,7 +17,7 @@ pub async fn send_daemon_request(request: &DaemonRequest) -> Result<DaemonRespon
         let mut reader = BufReader::new(stream);
         let mut buffer = String::new();
         reader.read_line(&mut buffer).await?;
-        return Ok(serde_json::from_str(buffer.trim())?);
+        parse_daemon_response(&buffer)
     }
     #[cfg(windows)]
     {
@@ -27,8 +27,16 @@ pub async fn send_daemon_request(request: &DaemonRequest) -> Result<DaemonRespon
         let mut reader = BufReader::new(pipe);
         let mut buffer = String::new();
         reader.read_line(&mut buffer).await?;
-        return Ok(serde_json::from_str(buffer.trim())?);
+        parse_daemon_response(&buffer)
     }
+}
+
+fn parse_daemon_response(buffer: &str) -> Result<DaemonResponse> {
+    let payload = buffer.trim();
+    if payload.is_empty() {
+        anyhow::bail!("daemon 无响应，连接可能已关闭或进程已退出");
+    }
+    Ok(serde_json::from_str(payload)?)
 }
 
 pub async fn is_daemon_running() -> bool {

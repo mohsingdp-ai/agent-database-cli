@@ -4,7 +4,7 @@ use crate::utils::masking::mask_secret;
 use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::Value;
-use std::{fs, path::PathBuf, process::Command};
+use std::{fs, path::Path, process::Command};
 use url::Url;
 use uuid::Uuid;
 
@@ -34,7 +34,7 @@ impl OracleSqlclAdapter {
         result
     }
 
-    fn spawn_sqlcl(&self, script_path: &PathBuf, markers: &Markers) -> Result<QueryResult> {
+    fn spawn_sqlcl(&self, script_path: &Path, markers: &Markers) -> Result<QueryResult> {
         let mut command = Command::new(&self.sqlcl_path);
         command
             .arg("-S")
@@ -65,7 +65,7 @@ impl OracleSqlclAdapter {
         if contains_sqlcl_error(&combined) || !output.status.success() {
             anyhow::bail!("{}", mask_secret(&format!("SQLcl 执行失败: {combined}")));
         }
-        parse_sqlcl_output(&stdout, &markers)
+        parse_sqlcl_output(&stdout, markers)
     }
 
     fn build_script(&self, command: &str, markers: &Markers) -> String {

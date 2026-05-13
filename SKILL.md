@@ -172,7 +172,7 @@ agent-database-cli exec --db local-mongodb --command '{"find":{"collection":"use
 
 - 成功时 stdout 输出 `rows`、`fields`、`rowCount`
 - 命中黑名单、违反只读模式、命令执行失败时 stderr 输出错误，退出码为 `1`
-- SQLcl Oracle 模式返回 SQLcl 文本输出，字段名为 `output`
+- SQLcl Oracle 模式会解析 SQLcl JSON 输出，成功时同样返回统一的 `rows`、`fields`、`rowCount`；仅在无法解析为 JSON 时才以 `output` 字段返回原始文本
 
 ## meta
 
@@ -239,7 +239,7 @@ agent-database-cli reset --db "<databaseName>"
 }
 ```
 
-SQLcl 模式通过 stdin 传入连接脚本，避免密码出现在命令行参数列表中。执行前仍会先走本地黑名单和只读检查。
+SQLcl 模式通过 stdin 传入连接脚本，避免密码出现在命令行参数列表中。执行前仍会先走本地黑名单和只读检查；输出会按内部标记截取 SQLcl 查询结果并解析为统一结果结构。
 
 ## 错误规则
 

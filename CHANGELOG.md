@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.18
+
+- Bugfix: `daemon status` 在 daemon 未运行或 Unix socket 残留时返回明确的未运行状态，避免直接暴露 `Connection refused`。
+
 ## 0.2.17
 
 - 性能优化：daemon 数据库请求不再持有全局配置锁，改为按数据库连接粒度串行执行；不同数据库的慢查询不会互相阻塞。

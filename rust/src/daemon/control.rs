@@ -51,20 +51,45 @@ pub async fn stop_daemon() -> Result<Value> {
 }
 
 pub async fn daemon_status() -> Result<Value> {
-    let response = client::send_daemon_request(&DaemonRequest {
+    let response = match client::send_daemon_request(&DaemonRequest {
         action: DaemonAction::Status,
         db: None,
         command: None,
         metadata: None,
         config_path: None,
     })
-    .await?;
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => {
+            return Ok(json!({
+                "running": false,
+                "connections": []
+            }));
+        }
+    };
     if !response.ok {
         anyhow::bail!(response
             .error
             .unwrap_or_else(|| "daemon 状态查询失败".to_string()));
     }
-    Ok(response.data.unwrap_or_else(|| json!({})))
+    Ok(with_running_flag(
+        response.data.unwrap_or_else(|| json!({})),
+        true,
+    ))
+}
+
+fn with_running_flag(data: Value, running: bool) -> Value {
+    match data {
+        Value::Object(mut object) => {
+            object.insert("running".to_string(), json!(running));
+            Value::Object(object)
+        }
+        _ => json!({
+            "running": running,
+            "data": data
+        }),
+    }
 }
 
 fn socket_display() -> Result<String> {
@@ -75,5 +100,18 @@ fn socket_display() -> Result<String> {
     #[cfg(windows)]
     {
         paths::socket_path_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::with_running_flag;
+    use serde_json::json;
+
+    #[test]
+    fn status_data_keeps_connections_and_adds_running_flag() {
+        let data = with_running_flag(json!({ "connections": [] }), true);
+
+        assert_eq!(data, json!({ "running": true, "connections": [] }));
     }
 }

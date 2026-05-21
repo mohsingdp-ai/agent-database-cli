@@ -34,7 +34,7 @@ pub async fn send_daemon_request(request: &DaemonRequest) -> Result<DaemonRespon
 fn parse_daemon_response(buffer: &str) -> Result<DaemonResponse> {
     let payload = buffer.trim();
     if payload.is_empty() {
-        anyhow::bail!("daemon 无响应，连接可能已关闭或进程已退出");
+        anyhow::bail!("daemon 在写回结果前异常退出，未返回错误详情；请使用 AGENT_DATABASE_CLI_DEBUG=1 重跑查看 daemon 侧错误");
     }
     Ok(serde_json::from_str(payload)?)
 }

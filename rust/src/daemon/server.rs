@@ -2,8 +2,9 @@ use crate::daemon::config_manager::DaemonConfigManager;
 use crate::types::{DaemonAction, DaemonRequest, DaemonResponse};
 use crate::utils::masking::to_error_message;
 use anyhow::Result;
+use futures::FutureExt;
 use serde_json::{json, Value};
-use std::sync::Arc;
+use std::{panic::AssertUnwindSafe, sync::Arc};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration, Instant};
@@ -40,7 +41,12 @@ pub async fn run_server() -> Result<()> {
             let manager = manager.clone();
             let last_activity = last_activity.clone();
             tokio::spawn(async move {
-                let _ = handle_stream(stream, manager, last_activity).await;
+                if let Err(error) = handle_stream(stream, manager, last_activity).await {
+                    debug_log(&format!(
+                        "daemon 请求处理失败: {}",
+                        to_error_message(&error)
+                    ));
+                }
             });
         }
     }
@@ -62,7 +68,12 @@ pub async fn run_server() -> Result<()> {
             let manager = manager.clone();
             let last_activity = last_activity.clone();
             tokio::spawn(async move {
-                let _ = handle_stream(server, manager, last_activity).await;
+                if let Err(error) = handle_stream(server, manager, last_activity).await {
+                    debug_log(&format!(
+                        "daemon 请求处理失败: {}",
+                        to_error_message(&error)
+                    ));
+                }
             });
         }
     }
@@ -98,25 +109,7 @@ where
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     reader.read_line(&mut line).await?;
-    let response = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-        Ok(request) => match handle_request(request, manager).await {
-            Ok(data) => DaemonResponse {
-                ok: true,
-                data: Some(data),
-                error: None,
-            },
-            Err(error) => DaemonResponse {
-                ok: false,
-                data: None,
-                error: Some(to_error_message(&error)),
-            },
-        },
-        Err(error) => DaemonResponse {
-            ok: false,
-            data: None,
-            error: Some(error.to_string()),
-        },
-    };
+    let response = build_response(line.trim(), manager).await;
     *last_activity.lock().await = Instant::now();
     let mut stream = reader.into_inner();
     stream
@@ -124,6 +117,41 @@ where
         .await?;
     stream.write_all(b"\n").await?;
     Ok(())
+}
+
+async fn build_response(payload: &str, manager: Arc<Mutex<DaemonConfigManager>>) -> DaemonResponse {
+    let request = match serde_json::from_str::<DaemonRequest>(payload) {
+        Ok(request) => request,
+        Err(error) => {
+            return DaemonResponse {
+                ok: false,
+                data: None,
+                error: Some(error.to_string()),
+            };
+        }
+    };
+
+    // 单个请求内部的业务错误必须通过协议写回，避免客户端误报 daemon 无响应。
+    match AssertUnwindSafe(handle_request(request, manager))
+        .catch_unwind()
+        .await
+    {
+        Ok(Ok(data)) => DaemonResponse {
+            ok: true,
+            data: Some(data),
+            error: None,
+        },
+        Ok(Err(error)) => DaemonResponse {
+            ok: false,
+            data: None,
+            error: Some(to_error_message(&error)),
+        },
+        Err(payload) => DaemonResponse {
+            ok: false,
+            data: None,
+            error: Some(format!("daemon 请求处理 panic: {}", panic_message(payload))),
+        },
+    }
 }
 
 async fn handle_request(
@@ -176,6 +204,22 @@ async fn handle_request(
                 _ => unreachable!(),
             }
         }
+    }
+}
+
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        return message.to_string();
+    }
+    if let Some(message) = payload.downcast_ref::<String>() {
+        return message.clone();
+    }
+    "未知 panic".to_string()
+}
+
+fn debug_log(message: &str) {
+    if std::env::var("AGENT_DATABASE_CLI_DEBUG").is_ok() {
+        eprintln!("[agent-database-cli daemon] {message}");
     }
 }
 

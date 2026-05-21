@@ -12,7 +12,7 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · 只读模式 · 命令黑�
   <img src="https://img.shields.io/badge/Node.js-%3E%3D20-339933?logo=node.js&logoColor=white" alt="Node.js >=20">
   <img src="https://img.shields.io/badge/npm-%3E%3D10-CB3837?logo=npm&logoColor=white" alt="npm >=10">
   <img src="https://img.shields.io/badge/sys-win%2Fmac%2Flinux-0078D6" alt="sys win/mac/linux">
-  <img src="https://img.shields.io/badge/release-v0.2.19-blue" alt="release v0.2.19">
+  <img src="https://img.shields.io/badge/release-v0.2.20-blue" alt="release v0.2.20">
 </p>
 
 [AI 一键安装](#ai-一键安装) · [安装](#安装) · [配置](#配置) · [权限配置](#权限配置) · [Oracle SQLcl](#oracle-sqlcl) · [许可证](#许可证) · [友情链接](#友情链接)

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.21
+## 0.2.22
 
 - 性能优化：移除热路径上的 Node.js 启动开销。安装时通过 `postinstall` 将启动器 shim 改写为直接调用平台原生二进制，纯启动耗时约从 74ms 降到 27ms；`bin/agent-database-cli.js` 作为 `--ignore-scripts` 等场景的回退保留。
 - 性能优化：`run_via_daemon` 去掉每次命令前的 `is_daemon_running` 探测，改为直接发送请求、仅在传输失败时启动 daemon 并重试一次；热路径由两次往返降为一次，warm 查询耗时约从 99ms 降到 50ms。

@@ -3,7 +3,8 @@ use anyhow::Result;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
 static SQL_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     ["select", "show", "describe", "desc", "explain", "with"]
@@ -120,14 +121,32 @@ fn assert_not_blacklisted(config: &DatabaseConfig, normalized: &str, head: &str)
     Ok(())
 }
 
-fn has_blacklisted_keyword(command: &str, keyword: &str) -> bool {
+// Compiling a regex per keyword on every command was the dominant cost of an
+// exec request: a read-only SELECT checks ~16 SQL write keywords, recompiling
+// ~16 regexes (~1-2ms each) every call. Cache compiled regexes by keyword so
+// each is built once for the daemon's lifetime. Regex clones are cheap (Arc).
+static KEYWORD_REGEX_CACHE: Lazy<Mutex<HashMap<String, Regex>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn keyword_boundary_regex(keyword: &str) -> Regex {
+    let mut cache = KEYWORD_REGEX_CACHE
+        .lock()
+        .expect("关键字正则缓存锁不应中毒");
+    if let Some(re) = cache.get(keyword) {
+        return re.clone();
+    }
     let escaped = regex::escape(keyword).replace(r"\ ", r"\s+");
     let re = Regex::new(&format!(
         r"(?i)(^|[^\p{{L}}\p{{N}}_$]){}($|[^\p{{L}}\p{{N}}_$])",
         escaped
     ))
     .expect("黑名单正则必须合法");
-    re.is_match(command)
+    cache.insert(keyword.to_string(), re.clone());
+    re
+}
+
+fn has_blacklisted_keyword(command: &str, keyword: &str) -> bool {
+    keyword_boundary_regex(keyword).is_match(command)
 }
 
 fn is_sql_database(db_type: &DatabaseType) -> bool {

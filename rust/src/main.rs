@@ -9,8 +9,12 @@ mod ssh_tunnel;
 mod types;
 mod utils;
 
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{anyhow, Context, Result};
+use clap::{Args, Parser, Subcommand};
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use types::{MetadataRequest, MetadataType, OutputFormat};
 
 #[derive(Parser)]
@@ -59,6 +63,16 @@ enum Commands {
         #[command(subcommand)]
         command: DaemonCommands,
     },
+    #[command(name = "install-skill", about = "安装或更新 Agent skill")]
+    InstallSkill(InstallSkillArgs),
+}
+
+#[derive(Debug, Args)]
+struct InstallSkillArgs {
+    #[arg(long, help = "只展示安装计划，不写入文件")]
+    dry_run: bool,
+    #[arg(long, help = "跳过交互确认，直接执行安装")]
+    yes: bool,
 }
 
 #[derive(Subcommand)]
@@ -113,6 +127,7 @@ async fn run() -> Result<()> {
                 serde_json::json!({ "stopped": true })
             }
         },
+        Commands::InstallSkill(args) => install_skill(args)?,
     };
     output::write_output(&data, format)?;
     Ok(())
@@ -134,4 +149,197 @@ fn parse_metadata_type(value: &str) -> Result<MetadataType> {
         "keys" => Ok(MetadataType::Keys),
         other => anyhow::bail!("不支持的元信息类型: {other}"),
     }
+}
+
+#[derive(Debug)]
+struct SkillPlanItem {
+    path: PathBuf,
+    action: String,
+    will_write: bool,
+    note: String,
+}
+
+fn install_skill(args: InstallSkillArgs) -> Result<serde_json::Value> {
+    let source = resolve_skill_source()?;
+    let home = home_dir()?;
+    let main_target = home.join(".agents/skills/agent-database-cli");
+    let mut plan = Vec::new();
+
+    plan.push(SkillPlanItem {
+        path: main_target.clone(),
+        action: if main_target.exists() {
+            "update_main"
+        } else {
+            "create_main"
+        }
+        .to_string(),
+        will_write: true,
+        note: format!("复制内置 skill 目录: {}", source.display()),
+    });
+
+    for parent in [
+        home.join(".codex/skills"),
+        home.join(".claude/skills"),
+        home.join(".config/agents/skills"),
+        home.join(".cursor/skills"),
+        home.join(".gemini/skills"),
+    ] {
+        let target = parent.join("agent-database-cli");
+        if !parent.exists() {
+            plan.push(SkillPlanItem {
+                path: target,
+                action: "skip_missing_parent".to_string(),
+                will_write: false,
+                note: "父目录不存在，跳过软链接".to_string(),
+            });
+            continue;
+        }
+        match fs::symlink_metadata(&target).ok() {
+            Some(meta) if meta.file_type().is_symlink() => plan.push(SkillPlanItem {
+                path: target,
+                action: "update_symlink".to_string(),
+                will_write: true,
+                note: format!("更新软链接到 {}", main_target.display()),
+            }),
+            Some(_) => plan.push(SkillPlanItem {
+                path: target,
+                action: "skip_existing_entity".to_string(),
+                will_write: false,
+                note: "目标已存在且不是软链接，必须手动处理，--yes 也不会覆盖".to_string(),
+            }),
+            None => plan.push(SkillPlanItem {
+                path: target,
+                action: "create_symlink".to_string(),
+                will_write: true,
+                note: format!("创建软链接到 {}", main_target.display()),
+            }),
+        }
+    }
+
+    print_skill_plan(&plan, args.dry_run);
+    if args.dry_run {
+        return Ok(serde_json::json!({ "dry_run": true, "target": main_target }));
+    }
+    if !args.yes && !confirm_install()? {
+        return Ok(serde_json::json!({ "cancelled": true }));
+    }
+
+    copy_dir_clean(&source, &main_target)?;
+    for item in plan
+        .iter()
+        .filter(|item| item.action.ends_with("symlink") && item.will_write)
+    {
+        if let Some(parent) = item.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if fs::symlink_metadata(&item.path)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            remove_path(&item.path)?;
+        }
+        create_symlink_dir(&main_target, &item.path)?;
+    }
+    Ok(serde_json::json!({
+        "installed": true,
+        "skill": main_target.join("SKILL.md")
+    }))
+}
+
+fn print_skill_plan(plan: &[SkillPlanItem], dry_run: bool) {
+    println!("agent-database-cli skill 安装计划");
+    if dry_run {
+        println!("模式: dry-run，不写文件、不创建软链接");
+    }
+    for item in plan {
+        println!(
+            "- [{}] {} -> {} ({})",
+            if item.will_write { "write" } else { "skip" },
+            item.action,
+            item.path.display(),
+            item.note
+        );
+    }
+}
+
+fn confirm_install() -> Result<bool> {
+    print!("确认执行以上安装计划？输入 yes 继续: ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(input.trim() == "yes")
+}
+
+fn resolve_skill_source() -> Result<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(package_dir) = env::var_os("AGENT_DATABASE_CLI_PACKAGE_DIR") {
+        candidates.push(PathBuf::from(package_dir).join("skills/agent-database-cli"));
+    }
+    if let Ok(exe) = env::current_exe() {
+        for ancestor in exe.ancestors().take(6) {
+            candidates.push(ancestor.join("skills/agent-database-cli"));
+        }
+    }
+    if let Ok(cwd) = env::current_dir() {
+        candidates.push(cwd.join("skills/agent-database-cli"));
+        candidates.push(cwd.to_path_buf());
+    }
+    for candidate in candidates {
+        if candidate.join("SKILL.md").is_file() {
+            return Ok(candidate);
+        }
+    }
+    Err(anyhow!("找不到内置 skill 目录 skills/agent-database-cli"))
+}
+
+fn copy_dir_clean(source: &Path, target: &Path) -> Result<()> {
+    if target.exists() || fs::symlink_metadata(target).is_ok() {
+        if fs::symlink_metadata(target)?.file_type().is_symlink() {
+            return Err(anyhow!("主安装目录不能是软链接: {}", target.display()));
+        }
+        fs::remove_dir_all(target)
+            .with_context(|| format!("清理主安装目录失败: {}", target.display()))?;
+    }
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let src = entry.path();
+        let dst = target.join(entry.file_name());
+        let meta = entry.file_type()?;
+        if meta.is_dir() {
+            copy_dir_clean(&src, &dst)?;
+        } else if meta.is_file() {
+            fs::copy(&src, &dst).with_context(|| format!("复制文件失败: {}", src.display()))?;
+        }
+    }
+    Ok(())
+}
+
+fn remove_path(path: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(path)?;
+    if meta.file_type().is_symlink() || meta.is_file() {
+        fs::remove_file(path)?;
+    } else if meta.is_dir() {
+        fs::remove_dir_all(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_symlink_dir(source: &Path, target: &Path) -> Result<()> {
+    std::os::unix::fs::symlink(source, target)
+        .with_context(|| format!("创建软链接失败: {}", target.display()))
+}
+
+#[cfg(windows)]
+fn create_symlink_dir(source: &Path, target: &Path) -> Result<()> {
+    std::os::windows::fs::symlink_dir(source, target)
+        .with_context(|| format!("创建软链接失败: {}", target.display()))
+}
+
+fn home_dir() -> Result<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("无法定位用户主目录"))
 }

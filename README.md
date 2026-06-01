@@ -82,7 +82,12 @@ npm link
 agent-database-cli --help
 ```
 
-添加skiil.md到需要使用的agent中
+安装/更新 Agent skill：
+
+```bash
+agent-database-cli install-skill --dry-run
+agent-database-cli install-skill
+```
 
 ## 配置
 

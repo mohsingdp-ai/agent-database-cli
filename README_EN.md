@@ -95,7 +95,12 @@ npm link
 agent-database-cli --help
 ```
 
-Add `SKILL.md` to the agent that needs to use this tool.
+Install/update the Agent skill:
+
+```bash
+agent-database-cli install-skill --dry-run
+agent-database-cli install-skill
+```
 
 ## Configuration
 

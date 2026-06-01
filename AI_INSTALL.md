@@ -45,16 +45,20 @@ mkdir -p ~/.agent-database-cli
 
 ## 3. 安装 skill
 
-将本仓库根目录的 `https://github.com/sleepinginsummer/agent-database-cli/blob/main/SKILL.md` 安装到 agent 的 skills 目录。
-
-Codex 默认目录示例：
+`agent-database-cli install-skill` 使用 CLI 包内置的 `skills/agent-database-cli` 作为来源。先展示真实计划，确认后再安装：
 
 ```bash
-mkdir -p ~/.codex/skills/agent-database-cli
-cp SKILL.md ~/.codex/skills/agent-database-cli/SKILL.md
+agent-database-cli install-skill --dry-run
+agent-database-cli install-skill
 ```
 
-如果 AI 使用其它 skills 目录，将 `SKILL.md` 复制到对应的 `agent-database-cli/SKILL.md`。
+需要跳过交互确认时使用：
+
+```bash
+agent-database-cli install-skill --yes
+```
+
+主安装目录为 `~/.agents/skills/agent-database-cli`。Codex、Claude、Kimi CLI、Cursor、Gemini 等已存在的 skill 父目录会创建软链接；已存在且不是软链接的目标不会被覆盖。
 
 ## 4. 更新
 

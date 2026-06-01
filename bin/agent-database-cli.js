@@ -47,7 +47,8 @@ if (!finalExecutablePath) {
   process.exit(1);
 }
 
-const result = spawnSync(finalExecutablePath, process.argv.slice(2), { stdio: "inherit" });
+const env = { ...process.env, AGENT_DATABASE_CLI_PACKAGE_DIR: packageRoot };
+const result = spawnSync(finalExecutablePath, process.argv.slice(2), { stdio: "inherit", env });
 if (result.error) {
   console.error(result.error.message);
   process.exit(1);

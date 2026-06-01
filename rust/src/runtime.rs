@@ -34,6 +34,35 @@ pub async fn run_reset(db: &str) -> Result<Value> {
     run_via_daemon(DaemonAction::Reset, Some(db), None, None).await
 }
 
+/// Persistent batch mode: read one SQL statement per stdin line and execute each
+/// over the already-running daemon, emitting one JSON result per line. Because a
+/// single process serves many queries, the per-call process-spawn cost is paid
+/// once instead of per query, so each statement runs at daemon round-trip speed
+/// (sub-millisecond) rather than the ~20ms of a fresh `exec` invocation.
+pub async fn run_repl(db: &str) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    // Start the daemon once up front so the first line isn't slowed by a cold start.
+    start_daemon().await?;
+    let mut lines = BufReader::new(tokio::io::stdin()).lines();
+    let mut stdout = tokio::io::stdout();
+    while let Some(line) = lines.next_line().await? {
+        let command = line.trim();
+        if command.is_empty() {
+            continue;
+        }
+        let value = match run_execute(db, command).await {
+            Ok(result) => serde_json::to_value(result)?,
+            Err(error) => json!({ "error": crate::utils::masking::to_error_message(&error) }),
+        };
+        let mut encoded = serde_json::to_string(&value)?;
+        encoded.push('\n');
+        stdout.write_all(encoded.as_bytes()).await?;
+        stdout.flush().await?;
+    }
+    Ok(())
+}
+
 async fn run_via_daemon(
     action: DaemonAction,
     db: Option<&str>,

@@ -42,6 +42,14 @@ enum Commands {
         #[arg(long)]
         command: String,
     },
+    #[command(
+        name = "repl",
+        about = "持续从 stdin 读取 SQL（每行一条），复用 daemon 连接低延迟批量执行，逐行输出 JSON"
+    )]
+    Repl {
+        #[arg(long)]
+        db: String,
+    },
     #[command(name = "meta", about = "查询数据库元信息")]
     Metadata {
         #[arg(long)]
@@ -103,6 +111,11 @@ async fn run() -> Result<()> {
         Commands::Test { db } => runtime::run_test(&db).await?,
         Commands::Execute { db, command } => {
             serde_json::to_value(runtime::run_execute(&db, &command).await?)?
+        }
+        Commands::Repl { db } => {
+            // repl streams its own JSON-per-line output to stdout.
+            runtime::run_repl(&db).await?;
+            return Ok(());
         }
         Commands::Metadata {
             db,

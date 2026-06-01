@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.21
+
+- 性能优化：移除热路径上的 Node.js 启动开销。安装时通过 `postinstall` 将启动器 shim 改写为直接调用平台原生二进制，纯启动耗时约从 74ms 降到 27ms；`bin/agent-database-cli.js` 作为 `--ignore-scripts` 等场景的回退保留。
+- 性能优化：`run_via_daemon` 去掉每次命令前的 `is_daemon_running` 探测，改为直接发送请求、仅在传输失败时启动 daemon 并重试一次；热路径由两次往返降为一次，warm 查询耗时约从 99ms 降到 50ms。
+- Bugfix：daemon 启动时与启动器分离（Windows 清除标准句柄继承标志 + `DETACHED_PROCESS`，Unix `setsid`），避免冷启动时调用方在管道读取（如 `out=$(agent-database-cli ...)`）上挂起直到 daemon 空闲退出。
+
 ## 0.2.19
 
 - 安全优化：数据库 URL 明文密码、SSH 隧道密码和私钥口令在首次使用连接时自动迁移到本地加密存储，配置文件仅保留 `passwordRef` / `passphraseRef`。

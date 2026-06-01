@@ -12,7 +12,8 @@
     "dev": "cargo run --bin agent-database-cli --",
     "dev:rust": "cargo run --bin agent-database-cli --",
     "test": "cargo test",
-    "check": "cargo check --bin agent-database-cli"
+    "check": "cargo check --bin agent-database-cli",
+    "postinstall": "node bin/postinstall.js"
   },
   "files": [
     "bin",

@@ -41,15 +41,24 @@ async fn run_via_daemon(
     metadata: Option<MetadataRequest>,
 ) -> Result<Value> {
     let config_path = resolve_config_path()?.display().to_string();
-    start_daemon().await?;
-    let response = send_daemon_request(&DaemonRequest {
+    let request = DaemonRequest {
         action,
         db: db.map(ToString::to_string),
         command: command.map(ToString::to_string),
         metadata,
         config_path: Some(config_path),
-    })
-    .await?;
+    };
+    // Fast path: assume the daemon is already running and send the request
+    // directly. Only when the transport fails (daemon not reachable) do we pay
+    // the cost of starting it and retrying. This avoids a redundant
+    // is_daemon_running() round-trip on every warm call.
+    let response = match send_daemon_request(&request).await {
+        Ok(response) => response,
+        Err(_) => {
+            start_daemon().await?;
+            send_daemon_request(&request).await?
+        }
+    };
     if !response.ok {
         anyhow::bail!(response
             .error

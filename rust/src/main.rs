@@ -18,7 +18,11 @@ use std::path::{Path, PathBuf};
 use types::{MetadataRequest, MetadataType, OutputFormat};
 
 #[derive(Parser)]
-#[command(name = "agent-database-cli", version, about = "统一数据库命令行工具")]
+#[command(
+    name = "agent-database-cli",
+    version,
+    about = "Unified database command-line tool"
+)]
 struct Cli {
     #[arg(long, default_value = "json", value_parser = ["json", "table"])]
     format: String,
@@ -28,14 +32,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(about = "展示支持的数据库类型")]
+    #[command(about = "Show supported database types")]
     List,
-    #[command(about = "测试数据库连接")]
+    #[command(about = "Test database connection")]
     Test {
         #[arg(long)]
         db: String,
     },
-    #[command(name = "exec", about = "统一执行 SQL、Redis 命令或 MongoDB JSON 命令")]
+    #[command(
+        name = "exec",
+        about = "Execute SQL, Redis commands, or MongoDB JSON commands"
+    )]
     Execute {
         #[arg(long)]
         db: String,
@@ -44,13 +51,13 @@ enum Commands {
     },
     #[command(
         name = "repl",
-        about = "持续从 stdin 读取 SQL（每行一条），复用 daemon 连接低延迟批量执行，逐行输出 JSON"
+        about = "Continuously read SQL from stdin (one per line), reuse the daemon connection for low-latency batch execution, and output JSON line by line"
     )]
     Repl {
         #[arg(long)]
         db: String,
     },
-    #[command(name = "meta", about = "查询数据库元信息")]
+    #[command(name = "meta", about = "Query database metadata")]
     Metadata {
         #[arg(long)]
         db: String,
@@ -61,35 +68,35 @@ enum Commands {
         #[arg(long)]
         pattern: Option<String>,
     },
-    #[command(about = "重置指定数据库连接")]
+    #[command(about = "Reset the specified database connection")]
     Reset {
         #[arg(long)]
         db: String,
     },
-    #[command(about = "管理本地连接守护进程")]
+    #[command(about = "Manage the local connection daemon")]
     Daemon {
         #[command(subcommand)]
         command: DaemonCommands,
     },
-    #[command(name = "install-skill", about = "安装或更新 Agent skill")]
+    #[command(name = "install-skill", about = "Install or update the Agent skill")]
     InstallSkill(InstallSkillArgs),
 }
 
 #[derive(Debug, Args)]
 struct InstallSkillArgs {
-    #[arg(long, help = "只展示安装计划，不写入文件")]
+    #[arg(long, help = "Only show the installation plan, do not write files")]
     dry_run: bool,
-    #[arg(long, help = "跳过交互确认，直接执行安装")]
+    #[arg(long, help = "Skip the interactive confirmation and install directly")]
     yes: bool,
 }
 
 #[derive(Subcommand)]
 enum DaemonCommands {
-    #[command(about = "启动 daemon")]
+    #[command(about = "Start the daemon")]
     Start,
-    #[command(about = "停止 daemon")]
+    #[command(about = "Stop the daemon")]
     Stop,
-    #[command(about = "查看 daemon 状态")]
+    #[command(about = "Show daemon status")]
     Status,
     #[command(hide = true)]
     Run,
@@ -150,7 +157,7 @@ fn parse_output_format(value: &str) -> Result<OutputFormat> {
     match value {
         "json" => Ok(OutputFormat::Json),
         "table" => Ok(OutputFormat::Table),
-        other => anyhow::bail!("不支持的输出格式: {other}"),
+        other => anyhow::bail!("unsupported output format: {other}"),
     }
 }
 
@@ -160,7 +167,7 @@ fn parse_metadata_type(value: &str) -> Result<MetadataType> {
         "columns" => Ok(MetadataType::Columns),
         "collections" => Ok(MetadataType::Collections),
         "keys" => Ok(MetadataType::Keys),
-        other => anyhow::bail!("不支持的元信息类型: {other}"),
+        other => anyhow::bail!("unsupported metadata type: {other}"),
     }
 }
 
@@ -187,7 +194,7 @@ fn install_skill(args: InstallSkillArgs) -> Result<serde_json::Value> {
         }
         .to_string(),
         will_write: true,
-        note: format!("复制内置 skill 目录: {}", source.display()),
+        note: format!("copy the built-in skill directory: {}", source.display()),
     });
 
     for parent in [
@@ -203,7 +210,7 @@ fn install_skill(args: InstallSkillArgs) -> Result<serde_json::Value> {
                 path: target,
                 action: "skip_missing_parent".to_string(),
                 will_write: false,
-                note: "父目录不存在，跳过软链接".to_string(),
+                note: "parent directory does not exist, skipping symlink".to_string(),
             });
             continue;
         }
@@ -212,19 +219,19 @@ fn install_skill(args: InstallSkillArgs) -> Result<serde_json::Value> {
                 path: target,
                 action: "update_symlink".to_string(),
                 will_write: true,
-                note: format!("更新软链接到 {}", main_target.display()),
+                note: format!("update symlink to {}", main_target.display()),
             }),
             Some(_) => plan.push(SkillPlanItem {
                 path: target,
                 action: "skip_existing_entity".to_string(),
                 will_write: false,
-                note: "目标已存在且不是软链接，必须手动处理，--yes 也不会覆盖".to_string(),
+                note: "target already exists and is not a symlink, manual handling required; --yes will not overwrite it".to_string(),
             }),
             None => plan.push(SkillPlanItem {
                 path: target,
                 action: "create_symlink".to_string(),
                 will_write: true,
-                note: format!("创建软链接到 {}", main_target.display()),
+                note: format!("create symlink to {}", main_target.display()),
             }),
         }
     }
@@ -260,9 +267,9 @@ fn install_skill(args: InstallSkillArgs) -> Result<serde_json::Value> {
 }
 
 fn print_skill_plan(plan: &[SkillPlanItem], dry_run: bool) {
-    println!("agent-database-cli skill 安装计划");
+    println!("agent-database-cli skill installation plan");
     if dry_run {
-        println!("模式: dry-run，不写文件、不创建软链接");
+        println!("mode: dry-run, no files written, no symlinks created");
     }
     for item in plan {
         println!(
@@ -276,7 +283,7 @@ fn print_skill_plan(plan: &[SkillPlanItem], dry_run: bool) {
 }
 
 fn confirm_install() -> Result<bool> {
-    print!("确认执行以上安装计划？输入 yes 继续: ");
+    print!("Confirm the installation plan above? Type yes to continue: ");
     io::stdout().flush()?;
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
@@ -302,16 +309,25 @@ fn resolve_skill_source() -> Result<PathBuf> {
             return Ok(candidate);
         }
     }
-    Err(anyhow!("找不到内置 skill 目录 skills/agent-database-cli"))
+    Err(anyhow!(
+        "could not find the built-in skill directory skills/agent-database-cli"
+    ))
 }
 
 fn copy_dir_clean(source: &Path, target: &Path) -> Result<()> {
     if target.exists() || fs::symlink_metadata(target).is_ok() {
         if fs::symlink_metadata(target)?.file_type().is_symlink() {
-            return Err(anyhow!("主安装目录不能是软链接: {}", target.display()));
+            return Err(anyhow!(
+                "the main install directory must not be a symlink: {}",
+                target.display()
+            ));
         }
-        fs::remove_dir_all(target)
-            .with_context(|| format!("清理主安装目录失败: {}", target.display()))?;
+        fs::remove_dir_all(target).with_context(|| {
+            format!(
+                "failed to clean the main install directory: {}",
+                target.display()
+            )
+        })?;
     }
     fs::create_dir_all(target)?;
     for entry in fs::read_dir(source)? {
@@ -322,7 +338,8 @@ fn copy_dir_clean(source: &Path, target: &Path) -> Result<()> {
         if meta.is_dir() {
             copy_dir_clean(&src, &dst)?;
         } else if meta.is_file() {
-            fs::copy(&src, &dst).with_context(|| format!("复制文件失败: {}", src.display()))?;
+            fs::copy(&src, &dst)
+                .with_context(|| format!("failed to copy file: {}", src.display()))?;
         }
     }
     Ok(())
@@ -341,18 +358,18 @@ fn remove_path(path: &Path) -> Result<()> {
 #[cfg(unix)]
 fn create_symlink_dir(source: &Path, target: &Path) -> Result<()> {
     std::os::unix::fs::symlink(source, target)
-        .with_context(|| format!("创建软链接失败: {}", target.display()))
+        .with_context(|| format!("failed to create symlink: {}", target.display()))
 }
 
 #[cfg(windows)]
 fn create_symlink_dir(source: &Path, target: &Path) -> Result<()> {
     std::os::windows::fs::symlink_dir(source, target)
-        .with_context(|| format!("创建软链接失败: {}", target.display()))
+        .with_context(|| format!("failed to create symlink: {}", target.display()))
 }
 
 fn home_dir() -> Result<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)
-        .ok_or_else(|| anyhow!("无法定位用户主目录"))
+        .ok_or_else(|| anyhow!("could not locate the user home directory"))
 }

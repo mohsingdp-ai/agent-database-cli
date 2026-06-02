@@ -77,7 +77,7 @@ function transport(address, request, timeoutMs = 30000) {
       fn(arg);
     };
     const timer = setTimeout(
-      () => done(reject, new Error("daemon 请求超时")),
+      () => done(reject, new Error("daemon request timed out")),
       timeoutMs
     );
     sock.on("connect", () => sock.write(JSON.stringify(request) + "\n"));
@@ -93,7 +93,7 @@ function transport(address, request, timeoutMs = 30000) {
       }
     });
     sock.on("error", (error) => done(reject, error));
-    sock.on("end", () => done(reject, new Error("daemon 连接提前关闭")));
+    sock.on("end", () => done(reject, new Error("daemon connection closed prematurely")));
   });
 }
 
@@ -104,18 +104,18 @@ function transport(address, request, timeoutMs = 30000) {
 let socketAddress = null;
 function ensureDaemon() {
   const bin = nativeBinary();
-  if (!bin) throw new Error("找不到 agent-database-cli 原生二进制，无法启动 daemon");
+  if (!bin) throw new Error("agent-database-cli native binary not found; cannot start daemon");
   const result = spawnSync(bin, ["daemon", "start"], { encoding: "utf8" });
   if (result.status !== 0) {
-    throw new Error("启动 daemon 失败: " + (result.stderr || "").trim());
+    throw new Error("failed to start daemon: " + (result.stderr || "").trim());
   }
   let parsed;
   try {
     parsed = JSON.parse(result.stdout);
   } catch {
-    throw new Error("无法解析 daemon start 输出: " + result.stdout);
+    throw new Error("could not parse daemon start output: " + result.stdout);
   }
-  if (!parsed.socket) throw new Error("daemon start 未返回 socket 地址");
+  if (!parsed.socket) throw new Error("daemon start did not return a socket address");
   socketAddress = parsed.socket;
   return socketAddress;
 }
@@ -145,7 +145,7 @@ async function callDaemon(action, extra = {}) {
 
 function unwrap(response) {
   if (!response.ok) {
-    throw new Error(response.error || "daemon 执行失败");
+    throw new Error(response.error || "daemon execution failed");
   }
   return response.data ?? {};
 }
@@ -166,7 +166,7 @@ let activeDatabase = null;
 
 function requireActive() {
   if (!activeDatabase) {
-    throw new Error("未选择数据库：请先调用 use_database 设置活动数据库");
+    throw new Error("No database selected: call use_database first to set the active database");
   }
   return activeDatabase;
 }
@@ -244,11 +244,11 @@ async function handleTool(name, args) {
       return { active: activeDatabase };
     case "use_database": {
       const database = args?.database;
-      if (!database) throw new Error("缺少参数 database");
+      if (!database) throw new Error("missing parameter: database");
       const known = configuredDatabases();
       if (known.length && !known.includes(database)) {
         throw new Error(
-          `未知数据库 "${database}"。可用: ${known.join(", ") || "(无)"}`
+          `Unknown database "${database}". Available: ${known.join(", ") || "(none)"}`
         );
       }
       await callDaemon("test", { db: database }); // verify connection
@@ -257,19 +257,19 @@ async function handleTool(name, args) {
     }
     case "query": {
       const sql = args?.sql;
-      if (!sql) throw new Error("缺少参数 sql");
+      if (!sql) throw new Error("missing parameter: sql");
       return await callDaemon("execute", { db: requireActive(), command: sql });
     }
     case "describe": {
       const type = args?.type;
-      if (!type) throw new Error("缺少参数 type");
+      if (!type) throw new Error("missing parameter: type");
       return await callDaemon("metadata", {
         db: requireActive(),
         metadata: { type, table: args?.table, pattern: args?.pattern }
       });
     }
     default:
-      throw new Error(`未知工具: ${name}`);
+      throw new Error(`Unknown tool: ${name}`);
   }
 }
 

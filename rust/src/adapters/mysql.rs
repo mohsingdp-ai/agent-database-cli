@@ -64,11 +64,14 @@ impl DatabaseAdapter for MySqlAdapter {
             MetadataType::Columns => {
                 let table = request
                     .table
-                    .ok_or_else(|| anyhow::anyhow!("columns 元信息查询必须提供 --table"))?
+                    .ok_or_else(|| anyhow::anyhow!("columns metadata query must provide --table"))?
                     .replace('`', "``");
                 self.query(&format!("show columns from `{}`", table)).await
             }
-            _ => anyhow::bail!("当前数据库不支持元信息类型: {:?}", request.request_type),
+            _ => anyhow::bail!(
+                "the current database does not support metadata type: {:?}",
+                request.request_type
+            ),
         }
     }
 }

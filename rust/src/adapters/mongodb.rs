@@ -79,14 +79,14 @@ impl MongoDbAdapter {
             "distinct" => {
                 let field = request
                     .field
-                    .ok_or_else(|| anyhow::anyhow!("distinct 命令必须提供 field"))?;
+                    .ok_or_else(|| anyhow::anyhow!("distinct command must provide field"))?;
                 let values = collection.distinct(field, request.filter).await?;
                 Ok(values
                     .into_iter()
                     .map(|value| json!({ "value": bson_to_json(value) }))
                     .collect())
             }
-            _ => anyhow::bail!("不支持的 MongoDB 命令: {operation}"),
+            _ => anyhow::bail!("unsupported MongoDB command: {operation}"),
         }
     }
 }
@@ -99,7 +99,7 @@ impl DatabaseAdapter for MongoDbAdapter {
             let db = match &self.database_name {
                 Some(name) => client.database(name),
                 None => client.default_database().ok_or_else(|| {
-                    anyhow::anyhow!("MongoDB URL 未包含默认数据库，请配置 database")
+                    anyhow::anyhow!("MongoDB URL does not include a default database; please configure database")
                 })?,
             };
             self.client = Some(client);
@@ -126,11 +126,11 @@ impl DatabaseAdapter for MongoDbAdapter {
         let parsed: Value = serde_json::from_str(command)?;
         let object = parsed
             .as_object()
-            .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须是对象"))?;
+            .ok_or_else(|| anyhow::anyhow!("MongoDB command must be an object"))?;
         let (operation, payload) = object
             .iter()
             .next()
-            .ok_or_else(|| anyhow::anyhow!("MongoDB 命令 JSON 不能为空"))?;
+            .ok_or_else(|| anyhow::anyhow!("MongoDB command JSON must not be empty"))?;
         let rows = self.run_operation(operation, payload).await?;
         Ok(QueryResult {
             row_count: Some(rows.len() as u64),
@@ -140,7 +140,10 @@ impl DatabaseAdapter for MongoDbAdapter {
     }
     async fn metadata(&mut self, request: MetadataRequest) -> Result<QueryResult> {
         if request.request_type != MetadataType::Collections {
-            anyhow::bail!("MongoDB 不支持元信息类型: {:?}", request.request_type);
+            anyhow::bail!(
+                "MongoDB does not support metadata type: {:?}",
+                request.request_type
+            );
         }
         self.connect().await?;
         let names = self.db.as_ref().unwrap().list_collection_names().await?;
@@ -167,11 +170,11 @@ struct MongoPayload {
 fn normalize_payload(value: &Value) -> Result<MongoPayload> {
     let object = value
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须是对象"))?;
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command must be an object"))?;
     let collection = object
         .get("collection")
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须提供 collection"))?
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command must provide collection"))?
         .to_string();
     let filter = json_to_document(
         object
@@ -184,13 +187,17 @@ fn normalize_payload(value: &Value) -> Result<MongoPayload> {
         .get("limit")
         .map(|v| {
             v.as_i64().ok_or_else(|| {
-                anyhow::anyhow!("MongoDB 命令 limit 必须是 1-{MAX_QUERY_LIMIT} 的整数")
+                anyhow::anyhow!(
+                    "MongoDB command limit must be an integer between 1 and {MAX_QUERY_LIMIT}"
+                )
             })
         })
         .transpose()?;
     if let Some(limit) = limit {
         if !(1..=MAX_QUERY_LIMIT).contains(&limit) {
-            anyhow::bail!("MongoDB 命令 limit 必须是 1-{MAX_QUERY_LIMIT} 的整数");
+            anyhow::bail!(
+                "MongoDB command limit must be an integer between 1 and {MAX_QUERY_LIMIT}"
+            );
         }
     }
     let field = object

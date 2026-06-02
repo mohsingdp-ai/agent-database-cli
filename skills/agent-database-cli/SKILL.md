@@ -1,88 +1,88 @@
 ---
 name: agent-database-cli
-description: 使用本地 agent-database-cli 安全操作已配置的数据库。适用于列出数据库连接、测试连接、执行 SQL/Redis/MongoDB 命令、查询表/列/集合/keys 元信息、管理本地连接 daemon，以及验证只读模式和命令黑名单的场景。
+description: Use the local agent-database-cli to safely operate configured databases. Suitable for listing database connections, testing connections, executing SQL/Redis/MongoDB commands, querying metadata for tables/columns/collections/keys, managing the local connection daemon, and verifying read-only mode and the command blacklist.
 ---
 
-# agent-database-cli 使用说明
+# agent-database-cli Usage Guide
 
-`agent-database-cli` 是一个基于本地配置的多数据库命令行工具，用于让 AI 或用户安全地操作数据库。
+`agent-database-cli` is a multi-database command-line tool driven by local configuration, designed to let an AI or a user operate databases safely.
 
-它能做的事：
+What it can do:
 
-- 列出支持的数据库类型和本地已配置数据库连接
-- 测试指定数据库连接
-- 执行 SQL、Redis 命令或 MongoDB JSON 命令
-- 查询表、列、集合、Redis keys 等元信息
-- 按单个数据库配置执行命令黑名单和只读模式
-- 普通命令会按需自动启动本地 daemon，daemon 默认空闲 `300` 秒后自动退出
-- 通过本地 daemon 短时间保持连接，单个数据库连接默认空闲 `180` 秒释放
-- daemon 在 Windows 使用 named pipe，在 macOS/Linux 使用 Unix socket
-- 预编译二进制支持 macOS x64/arm64、Linux x64/arm64、Windows x64
-- Oracle 默认使用 SQLcl；显式配置 `oracleDriver: "oracle"` 或 `"oracledb"` 时使用原生 Oracle 驱动
+- List supported database types and locally configured database connections
+- Test a specified database connection
+- Execute SQL, Redis commands, or MongoDB JSON commands
+- Query metadata such as tables, columns, collections, and Redis keys
+- Enforce a command blacklist and read-only mode per individual database configuration
+- Normal commands automatically start the local daemon on demand; the daemon exits automatically after `300` seconds of idle time by default
+- Keep connections alive for a short time through the local daemon; an individual database connection is released after `180` seconds of idle time by default
+- The daemon uses a named pipe on Windows and a Unix socket on macOS/Linux
+- Prebuilt binaries support macOS x64/arm64, Linux x64/arm64, and Windows x64
+- Oracle uses SQLcl by default; when `oracleDriver: "oracle"` or `"oracledb"` is explicitly configured, the native Oracle driver is used
 
-它不做的事：
+What it does not do:
 
-- 不扫描网络或发现数据库，只使用配置文件中的连接
-- 不绕过配置中的黑名单和只读模式
-- 不输出未脱敏的密码、token、secret
-- 不默认执行写入、删除、DDL 或其它危险命令
+- Does not scan the network or discover databases; it only uses the connections in the configuration file
+- Does not bypass the blacklist or read-only mode defined in the configuration
+- Does not output unmasked passwords, tokens, or secrets
+- Does not execute writes, deletes, DDL, or other dangerous commands by default
 
-## 安全确认
+## Safety Confirmation
 
-执行任何可能写入、删除、修改结构或影响数据完整性的命令前，必须先确认目标数据库配置是否启用了 `readonly` 和 `blacklist`。
+Before executing any command that may write, delete, modify structure, or affect data integrity, you must first confirm whether the target database configuration has `readonly` and `blacklist` enabled.
 
-危险操作包括：
+Dangerous operations include:
 
-- DDL：`drop`、`truncate`、`alter`、`create`
-- DML 写入：`insert`、`update`、`delete`、`merge`
-- Redis 清空或写入：`flushall`、`flushdb`、`set`、`del`
-- MongoDB 写入或删除：`insertOne`、`updateOne`、`deleteMany`、`drop`、`dropDatabase`
-- 任何不可逆、影响生产数据、影响结构或权限的命令
+- DDL: `drop`, `truncate`, `alter`, `create`
+- DML writes: `insert`, `update`, `delete`, `merge`
+- Redis flush or write: `flushall`, `flushdb`, `set`, `del`
+- MongoDB write or delete: `insertOne`, `updateOne`, `deleteMany`, `drop`, `dropDatabase`
+- Any command that is irreversible, affects production data, or affects structure or permissions
 
-如果用户明确要求执行危险命令，先说明目标数据库名、命令、可能影响，并等待用户明确同意。即使用户同意，也不能绕过本项目配置中的黑名单和只读模式。
+If the user explicitly requests a dangerous command, first state the target database name, the command, and its potential impact, then wait for the user's explicit consent. Even with the user's consent, you must not bypass the blacklist or read-only mode defined in this project's configuration.
 
-黑名单优先级高于只读模式。命令执行前先检查 `blacklist`，命中后直接拒绝；未命中时再检查 `readonly`。
+The blacklist takes precedence over read-only mode. Before executing a command, check the `blacklist` first and reject immediately on a match; only if there is no match, then check `readonly`.
 
-读取配置文件json前需要用户确认，防止密钥泄露。
+Reading the JSON configuration file requires user confirmation, to prevent secret leakage.
 
-## 环境校验
+## Environment Check
 
-调用前优先检查 CLI 是否可用：
+Before invoking, first check whether the CLI is available:
 
 ```bash
 agent-database-cli --help
 ```
 
 
-如果上面的命令失败，检查基础环境：
+If the command above fails, check the base environment:
 
 ```bash
 node --version
 npm --version
 ```
 
-如果依赖或构建产物缺失，在项目目录中执行：
+If dependencies or build artifacts are missing, run the following in the project directory:
 
 ```bash
 npm install
 npm run build
 ```
 
-默认配置文件：
+Default configuration file:
 
 ```text
 ~/.agent-database-cli/config.json
 ```
 
-指定其它配置文件：
+Specify a different configuration file:
 
 ```bash
 AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 ```
 
-## 配置格式
+## Configuration Format
 
-配置文件是 JSON 对象，根字段为 `databases`：
+The configuration file is a JSON object whose root field is `databases`:
 
 ```json
 {
@@ -98,30 +98,30 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 }
 ```
 
-字段：
+Fields:
 
-- `type`: `mysql`、`postgres`、`redis`、`oracle`、`mongodb`
-- `url`: 数据库连接 URL
-- `passwordRef`: 数据库 URL 密码的本地密文引用，首次使用明文 URL 密码时自动生成
-- `database`: MongoDB 默认数据库名，可选
-- `readonly`: 是否启用只读模式
-- `blacklist`: 命令黑名单数组，大小写不敏感
-- `keepAliveSeconds`: daemon 连接空闲释放秒数，默认 `180`
-- `oracleDriver`: Oracle 驱动，可选 `oracledb` 或 `sqlcl`
-- `sqlclPath`: SQLcl 可执行文件路径
-- `javaHome`: SQLcl 使用的 `JAVA_HOME`
-- `sshTunnel.passwordRef`: SSH 密码的本地密文引用，首次使用明文 `sshTunnel.password` 时自动生成
-- `sshTunnel.passphraseRef`: SSH 私钥口令的本地密文引用，首次使用明文 `sshTunnel.passphrase` 时自动生成
+- `type`: `mysql`, `postgres`, `redis`, `oracle`, `mongodb`
+- `url`: database connection URL
+- `passwordRef`: local encrypted reference for the database URL password; generated automatically the first time a plaintext URL password is used
+- `database`: default MongoDB database name, optional
+- `readonly`: whether to enable read-only mode
+- `blacklist`: command blacklist array, case-insensitive
+- `keepAliveSeconds`: number of seconds before an idle daemon connection is released, default `180`
+- `oracleDriver`: Oracle driver, either `oracledb` or `sqlcl`
+- `sqlclPath`: path to the SQLcl executable
+- `javaHome`: the `JAVA_HOME` used by SQLcl
+- `sshTunnel.passwordRef`: local encrypted reference for the SSH password; generated automatically the first time a plaintext `sshTunnel.password` is used
+- `sshTunnel.passphraseRef`: local encrypted reference for the SSH private key passphrase; generated automatically the first time a plaintext `sshTunnel.passphrase` is used
 
-首次使用连接时，CLI 会把数据库 URL 明文密码、`sshTunnel.password`、`sshTunnel.passphrase` 加密保存到配置目录的 `secrets.json`，生成本地 `secret.key`，并把配置文件改写为对应 `*Ref`。后续只在内存中解密使用；改密码时重新填入明文字段即可覆盖旧密文。
+The first time a connection is used, the CLI encrypts the plaintext database URL password, `sshTunnel.password`, and `sshTunnel.passphrase`, saves them to `secrets.json` in the configuration directory, generates a local `secret.key`, and rewrites the configuration file to use the corresponding `*Ref` references. From then on they are decrypted only in memory; to change a password, re-enter the plaintext field to overwrite the old ciphertext.
 
-## 全局参数
+## Global Parameters
 
-- `--format <format>`: 输出格式，支持 `json` 或 `table`，默认 `json`
-- `--help`, `-h`: 输出帮助
-- `--version`, `-V`: 输出版本
+- `--format <format>`: output format, supports `json` or `table`, default `json`
+- `--help`, `-h`: print help
+- `--version`, `-V`: print version
 
-配置路径通过环境变量传递：
+The configuration path is passed via an environment variable:
 
 ```bash
 AGENT_DATABASE_CLI_CONFIG=/path/to/config.json
@@ -129,7 +129,7 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json
 
 ## list
 
-列出支持的数据库类型、已配置连接和配置文件路径。
+List supported database types, configured connections, and the configuration file path.
 
 ```bash
 agent-database-cli list
@@ -137,35 +137,35 @@ agent-database-cli --format table list
 ```
 
 
-返回值：
+Return values:
 
-- 成功时 stdout 输出 JSON 或表格
-- 输出包含 `supported`、`configured`、`configPath`
-- 配置文件不存在时仍会输出支持列表，`configured` 为空
-- 退出码为 `0`
+- On success, outputs JSON or a table to stdout
+- The output includes `supported`, `configured`, and `configPath`
+- If the configuration file does not exist, the supported list is still output and `configured` is empty
+- The exit code is `0`
 
 ## test
 
-测试指定数据库连接。
+Test a specified database connection.
 
 ```bash
 agent-database-cli test --db "<databaseName>"
 ```
 
-返回值：
+Return values:
 
-- 成功时 stdout 输出 `{ "ok": true }`
-- 连接失败、配置缺失或认证失败时 stderr 输出错误，退出码为 `1`
+- On success, outputs `{ "ok": true }` to stdout
+- On connection failure, missing configuration, or authentication failure, outputs an error to stderr with exit code `1`
 
 ## exec
 
-统一执行 SQL、Redis 命令或 MongoDB JSON 命令。
+Uniformly execute SQL, Redis commands, or MongoDB JSON commands.
 
 ```bash
 agent-database-cli exec --db "<databaseName>" --command "<command>"
 ```
 
-示例：
+Examples:
 
 ```bash
 agent-database-cli exec --db local-mysql --command "select 1"
@@ -173,15 +173,15 @@ agent-database-cli exec --db cache --command "GET user:1"
 agent-database-cli exec --db local-mongodb --command '{"find":{"collection":"users","filter":{},"limit":1}}'
 ```
 
-返回值：
+Return values:
 
-- 成功时 stdout 输出 `rows`、`fields`、`rowCount`
-- 命中黑名单、违反只读模式、命令执行失败时 stderr 输出错误，退出码为 `1`
-- SQLcl Oracle 模式会解析 SQLcl JSON 输出，成功时同样返回统一的 `rows`、`fields`、`rowCount`；仅在无法解析为 JSON 时才以 `output` 字段返回原始文本
+- On success, outputs `rows`, `fields`, and `rowCount` to stdout
+- On a blacklist match, a read-only mode violation, or a command execution failure, outputs an error to stderr with exit code `1`
+- In SQLcl Oracle mode, the SQLcl JSON output is parsed and, on success, the same unified `rows`, `fields`, and `rowCount` are returned; only when the output cannot be parsed as JSON is the raw text returned in an `output` field
 
 ## meta
 
-查询数据库元信息。
+Query database metadata.
 
 ```bash
 agent-database-cli meta --db "<databaseName>" --type tables
@@ -190,21 +190,21 @@ agent-database-cli meta --db "<databaseName>" --type collections
 agent-database-cli meta --db "<databaseName>" --type keys --pattern "user:*"
 ```
 
-参数：
+Parameters:
 
-- `--db <name>`: 数据库配置名
-- `--type <type>`: `tables`、`columns`、`collections`、`keys`
-- `--table <table>`: `columns` 查询所需表名
-- `--pattern <pattern>`: Redis keys 匹配模式
+- `--db <name>`: database configuration name
+- `--type <type>`: `tables`, `columns`, `collections`, `keys`
+- `--table <table>`: the table name required for a `columns` query
+- `--pattern <pattern>`: Redis keys match pattern
 
-返回值：
+Return values:
 
-- 成功时 stdout 输出查询结果
-- 当前数据库不支持的元信息类型会失败并返回错误
+- On success, outputs the query result to stdout
+- A metadata type not supported by the current database fails and returns an error
 
 ## daemon
 
-管理本地连接守护进程。普通 `test`、`exec`、`meta`、`reset` 命令会在 daemon 未运行时自动启动 daemon，已运行时直接复用，不会重复启动。daemon 使用 Unix socket，不暴露网络端口，默认空闲 `300` 秒后自动退出。
+Manage the local connection daemon. The normal `test`, `exec`, `meta`, and `reset` commands start the daemon automatically when it is not running, and reuse it directly when it is, without starting it again. The daemon uses a Unix socket, does not expose a network port, and exits automatically after `300` seconds of idle time by default.
 
 ```bash
 agent-database-cli daemon start
@@ -212,25 +212,25 @@ agent-database-cli daemon status
 agent-database-cli daemon stop
 ```
 
-返回值：
+Return values:
 
-- `start` 成功时输出 socket 路径
-- `status` 成功时输出当前连接列表
-- `stop` 成功时输出停止结果
+- `start` outputs the socket path on success
+- `status` outputs the current list of connections on success
+- `stop` outputs the stop result on success
 
 ## reset
 
-重置指定数据库连接。
+Reset a specified database connection.
 
 ```bash
 agent-database-cli reset --db "<databaseName>"
 ```
 
-如果 daemon 正在运行，会断开并清理该数据库连接；下一次命令会重新连接。
+If the daemon is running, it disconnects and cleans up that database connection; the next command reconnects.
 
 ## Oracle SQLcl
 
-当 Oracle `oracledb` Thin mode 不支持目标库版本时，可以改用 SQLcl。
+When Oracle `oracledb` Thin mode does not support the target database version, you can switch to SQLcl.
 
 ```json
 {
@@ -244,15 +244,15 @@ agent-database-cli reset --db "<databaseName>"
 }
 ```
 
-SQLcl 模式通过 stdin 传入连接脚本，避免密码出现在命令行参数列表中。执行前仍会先走本地黑名单和只读检查；输出会按内部标记截取 SQLcl 查询结果并解析为统一结果结构。
+SQLcl mode passes the connection script via stdin to avoid the password appearing in the command-line argument list. The local blacklist and read-only checks still run before execution; the output is sliced by internal markers to extract the SQLcl query result and parsed into the unified result structure.
 
-## 错误规则
+## Error Rules
 
-- 配置文件 JSON 无效时失败
-- `databases` 缺失或数据库配置名不存在时失败
-- 未知 `type`、未知 `oracleDriver` 或非法 `keepAliveSeconds` 会失败
-- `exec` 缺少 `--db` 或 `--command` 会失败
-- `meta columns` 缺少 `--table` 会失败
-- 命中黑名单时失败，错误中包含 `黑名单拒绝执行命令`
-- 违反只读模式时失败，错误中包含 `只读模式拒绝执行命令`
-- 所有失败统一在 stderr 输出错误信息，退出码为 `1`
+- Fails when the configuration file JSON is invalid
+- Fails when `databases` is missing or the database configuration name does not exist
+- Fails on an unknown `type`, an unknown `oracleDriver`, or an invalid `keepAliveSeconds`
+- `exec` fails when `--db` or `--command` is missing
+- `meta columns` fails when `--table` is missing
+- Fails on a blacklist match, with an error indicating the command was rejected by the blacklist
+- Fails on a read-only mode violation, with an error indicating the command was rejected by read-only mode
+- All failures uniformly output an error message to stderr with exit code `1`

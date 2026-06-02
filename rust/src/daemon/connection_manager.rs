@@ -186,7 +186,7 @@ impl ConnectionManager {
         if !still_current {
             drop(entries);
             entry.lock().await.adapter.disconnect().await?;
-            anyhow::bail!("数据库连接初始化已取消: {name}");
+            anyhow::bail!("database connection initialization was cancelled: {name}");
         }
         entries.insert(name.to_string(), EntrySlot::Ready(entry.clone()));
         notify.notify_waiters();

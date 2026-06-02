@@ -40,7 +40,11 @@ impl DaemonConfigManager {
         {
             self.replace_manager(snapshot).await?;
         }
-        Ok(self.manager.as_ref().expect("配置管理器已初始化").clone())
+        Ok(self
+            .manager
+            .as_ref()
+            .expect("config manager is initialized")
+            .clone())
     }
 
     pub fn current_manager(&self) -> Option<Arc<ConnectionManager>> {

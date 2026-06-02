@@ -62,10 +62,10 @@ impl DatabaseAdapter for PostgresAdapter {
         match request.request_type {
             MetadataType::Tables => self.query("select table_schema, table_name from information_schema.tables where table_type = 'BASE TABLE' and table_schema not in ('pg_catalog', 'information_schema') order by table_schema, table_name").await,
             MetadataType::Columns => {
-                let table = request.table.ok_or_else(|| anyhow::anyhow!("columns 元信息查询必须提供 --table"))?.replace('\'', "''");
+                let table = request.table.ok_or_else(|| anyhow::anyhow!("columns metadata query must provide --table"))?.replace('\'', "''");
                 self.query(&format!("select table_schema, table_name, column_name, data_type from information_schema.columns where table_name = '{}' order by ordinal_position", table)).await
             }
-            _ => anyhow::bail!("当前数据库不支持元信息类型: {:?}", request.request_type),
+            _ => anyhow::bail!("the current database does not support metadata type: {:?}", request.request_type),
         }
     }
 }

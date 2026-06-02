@@ -15,7 +15,7 @@ const packageByPlatform = {
 const key = `${process.platform}-${process.arch}`;
 const packageName = packageByPlatform[key];
 if (!packageName) {
-  console.error(`agent-database-cli 暂不支持当前平台: ${key}`);
+  console.error(`agent-database-cli does not currently support this platform: ${key}`);
   process.exit(1);
 }
 
@@ -25,9 +25,9 @@ const packageRoot = join(currentDir, "..");
 const installRoot = join(packageRoot, "..");
 
 const candidateExecutablePaths = [
-  // npm 正常安装时，平台子包与主包同级位于 node_modules/@agent-database-cli/*。
+  // On a normal npm install, the platform sub-package sits alongside the main package under node_modules/@agent-database-cli/*.
   join(installRoot, packageName, "bin", executableName),
-  // 兼容极少数包管理器把 optionalDependencies 嵌套到主包 node_modules 的布局。
+  // Handle the rare package managers that nest optionalDependencies inside the main package's node_modules.
   join(packageRoot, "node_modules", packageName, "bin", executableName)
 ];
 
@@ -42,8 +42,8 @@ const finalExecutablePath = packagedExecutablePath
       : undefined);
 
 if (!finalExecutablePath) {
-  console.error(`未找到平台二进制: ${packageName}`);
-  console.error("请重新安装 agent-database-cli，确保 optionalDependencies 没有被禁用。");
+  console.error(`Platform binary not found: ${packageName}`);
+  console.error("Please reinstall agent-database-cli and make sure optionalDependencies are not disabled.");
   process.exit(1);
 }
 

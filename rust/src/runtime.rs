@@ -91,7 +91,7 @@ async fn run_via_daemon(
     if !response.ok {
         anyhow::bail!(response
             .error
-            .unwrap_or_else(|| "daemon 执行失败".to_string()));
+            .unwrap_or_else(|| "daemon execution failed".to_string()));
     }
     Ok(response.data.unwrap_or_else(|| json!({})))
 }

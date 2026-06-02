@@ -31,7 +31,7 @@ pub async fn start_daemon() -> Result<Value> {
             return Ok(json!({ "started": true, "socket": socket_display()? }));
         }
     }
-    anyhow::bail!("daemon 启动超时")
+    anyhow::bail!("daemon startup timed out")
 }
 
 pub async fn stop_daemon() -> Result<Value> {
@@ -46,7 +46,7 @@ pub async fn stop_daemon() -> Result<Value> {
     if !response.ok {
         anyhow::bail!(response
             .error
-            .unwrap_or_else(|| "daemon 停止失败".to_string()));
+            .unwrap_or_else(|| "failed to stop daemon".to_string()));
     }
     Ok(json!({ "stopped": true }))
 }
@@ -72,7 +72,7 @@ pub async fn daemon_status() -> Result<Value> {
     if !response.ok {
         anyhow::bail!(response
             .error
-            .unwrap_or_else(|| "daemon 状态查询失败".to_string()));
+            .unwrap_or_else(|| "failed to query daemon status".to_string()));
     }
     Ok(with_running_flag(
         response.data.unwrap_or_else(|| json!({})),

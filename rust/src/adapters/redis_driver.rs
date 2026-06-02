@@ -88,7 +88,7 @@ impl RedisAdapter {
         let route = self
             .first_cluster_route
             .clone()
-            .ok_or_else(|| anyhow::anyhow!("Redis Cluster 连接为空"))?;
+            .ok_or_else(|| anyhow::anyhow!("Redis Cluster connection is empty"))?;
         if debug_enabled() {
             eprintln!("[rust-db-cli] redis cluster command via {}", route);
         }
@@ -96,7 +96,7 @@ impl RedisAdapter {
             .query_async(
                 self.cluster_conns
                     .get_mut(&route)
-                    .expect("默认 Redis Cluster 连接存在"),
+                    .expect("default Redis Cluster connection exists"),
             )
             .await;
         match first_result {
@@ -132,7 +132,7 @@ fn rewrite_redis_url(base: &str, host: &str, port: u16) -> Result<String> {
     parsed.set_host(Some(host))?;
     parsed
         .set_port(Some(port))
-        .map_err(|_| anyhow::anyhow!("Redis URL 端口改写失败"))?;
+        .map_err(|_| anyhow::anyhow!("failed to rewrite Redis URL port"))?;
     Ok(parsed.to_string())
 }
 
@@ -140,7 +140,7 @@ fn route_key_from_url(value: &str) -> Result<String> {
     let parsed = Url::parse(value)?;
     let host = parsed
         .host_str()
-        .ok_or_else(|| anyhow::anyhow!("Redis Cluster 节点 URL 必须包含 host"))?;
+        .ok_or_else(|| anyhow::anyhow!("Redis Cluster node URL must include a host"))?;
     Ok(format!("{}:{}", host, parsed.port().unwrap_or(6379)))
 }
 
@@ -161,13 +161,14 @@ impl DatabaseAdapter for RedisAdapter {
         if let Some(cluster) = &self.redis_cluster {
             if self.cluster_conns.is_empty() {
                 if let Some(map) = &cluster.node_address_map {
-                    let first_route = map
-                        .keys()
-                        .next()
-                        .cloned()
-                        .ok_or_else(|| anyhow::anyhow!("Redis Cluster 地址映射不能为空"))?;
+                    let first_route = map.keys().next().cloned().ok_or_else(|| {
+                        anyhow::anyhow!("Redis Cluster address map must not be empty")
+                    })?;
                     let local = map.get(&first_route).ok_or_else(|| {
-                        anyhow::anyhow!("Redis Cluster 地址映射缺少入口节点: {}", first_route)
+                        anyhow::anyhow!(
+                            "Redis Cluster address map is missing the entry node: {}",
+                            first_route
+                        )
                     })?;
                     let url = rewrite_redis_url(&self.url, &local.host, local.port)?;
                     if debug_enabled() {
@@ -191,7 +192,7 @@ impl DatabaseAdapter for RedisAdapter {
                     let node = cluster
                         .nodes
                         .first()
-                        .ok_or_else(|| anyhow::anyhow!("Redis Cluster 节点不能为空"))?;
+                        .ok_or_else(|| anyhow::anyhow!("Redis Cluster nodes must not be empty"))?;
                     let route = route_key_from_url(node)?;
                     if debug_enabled() {
                         eprintln!("[rust-db-cli] redis connect cluster entry {}", node);
@@ -233,10 +234,10 @@ impl DatabaseAdapter for RedisAdapter {
         self.run_command(&["PING".to_string()]).await.map(|_| ())
     }
     async fn execute(&mut self, command: &str) -> Result<QueryResult> {
-        let parts =
-            shell_words::split(command).map_err(|_| anyhow::anyhow!("Redis 命令解析失败"))?;
+        let parts = shell_words::split(command)
+            .map_err(|_| anyhow::anyhow!("failed to parse Redis command"))?;
         if parts.is_empty() {
-            anyhow::bail!("Redis 命令不能为空");
+            anyhow::bail!("Redis command must not be empty");
         }
         let _readonly =
             security::is_read_only_command(&crate::types::DatabaseType::Redis, command)?;
@@ -249,7 +250,10 @@ impl DatabaseAdapter for RedisAdapter {
     }
     async fn metadata(&mut self, request: MetadataRequest) -> Result<QueryResult> {
         if request.request_type != MetadataType::Keys {
-            anyhow::bail!("Redis 不支持元信息类型: {:?}", request.request_type);
+            anyhow::bail!(
+                "Redis does not support metadata type: {:?}",
+                request.request_type
+            );
         }
         self.connect().await?;
         let pattern = request.pattern.unwrap_or_else(|| "*".to_string());

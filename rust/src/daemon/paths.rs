@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 pub fn runtime_dir() -> Result<PathBuf> {
     Ok(dirs::home_dir()
-        .context("无法解析用户主目录")?
+        .context("could not resolve user home directory")?
         .join(".agent-database-cli"))
 }
 
@@ -19,7 +19,7 @@ pub fn socket_path() -> Result<PathBuf> {
 #[cfg(windows)]
 pub fn socket_path_string() -> Result<String> {
     use sha1::{Digest, Sha1};
-    let home = dirs::home_dir().context("无法解析用户主目录")?;
+    let home = dirs::home_dir().context("could not resolve user home directory")?;
     let mut hasher = Sha1::new();
     hasher.update(home.to_string_lossy().as_bytes());
     let digest = format!("{:x}", hasher.finalize());

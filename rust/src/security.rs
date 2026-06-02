@@ -17,13 +17,13 @@ static SQL_WRITE_COMMANDS: &[&str] = &[
 ];
 static SQL_WRITE_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
     [
-        // PostgreSQL SELECT INTO 会创建新表，首词仍是 select，不能按普通查询放行。
+        // PostgreSQL SELECT INTO creates a new table; the first word is still select, so it cannot be allowed as an ordinary query.
         r"(?i)(^|[^\p{L}\p{N}_$])select\s+.+\s+into\s+[^\s(]",
-        // CTE 后接写操作时首词是 with，也需要按写操作拒绝。
+        // When a CTE is followed by a write operation, the first word is with, so it must also be rejected as a write operation.
         r"(?i)(^|[^\p{L}\p{N}_$])with\s+.+\)\s*(insert|update|delete|merge)\b",
     ]
     .into_iter()
-    .map(|pattern| Regex::new(pattern).expect("SQL 写入模式正则必须合法"))
+    .map(|pattern| Regex::new(pattern).expect("SQL write pattern regex must be valid"))
     .collect()
 });
 static REDIS_READ_COMMANDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
@@ -95,10 +95,10 @@ pub fn assert_command_allowed(config: &DatabaseConfig, command: &str) -> Result<
     let normalized = normalize_command(command);
     let head = get_command_head(&normalized, &config.db_type)?;
     assert_not_blacklisted(config, &normalized, &head)?;
-    // 默认只读，只有显式 readonly=false 才允许写操作。
+    // Read-only by default; write operations are only allowed when readonly=false is set explicitly.
     if config.readonly.unwrap_or(true) && !is_read_only_command(&config.db_type, &normalized)? {
         let rejected = if head.is_empty() { normalized } else { head };
-        anyhow::bail!("只读模式拒绝执行命令: {rejected}");
+        anyhow::bail!("read-only mode rejected command: {rejected}");
     }
     Ok(())
 }
@@ -115,7 +115,7 @@ fn assert_not_blacklisted(config: &DatabaseConfig, normalized: &str, head: &str)
             continue;
         }
         if head == black || has_blacklisted_keyword(&command_for_blacklist, &black) {
-            anyhow::bail!("黑名单拒绝执行命令: {item}");
+            anyhow::bail!("blocklist rejected command: {item}");
         }
     }
     Ok(())
@@ -131,7 +131,7 @@ static KEYWORD_REGEX_CACHE: Lazy<Mutex<HashMap<String, Regex>>> =
 fn keyword_boundary_regex(keyword: &str) -> Regex {
     let mut cache = KEYWORD_REGEX_CACHE
         .lock()
-        .expect("关键字正则缓存锁不应中毒");
+        .expect("keyword regex cache lock should not be poisoned");
     if let Some(re) = cache.get(keyword) {
         return re.clone();
     }
@@ -140,7 +140,7 @@ fn keyword_boundary_regex(keyword: &str) -> Regex {
         r"(?i)(^|[^\p{{L}}\p{{N}}_$]){}($|[^\p{{L}}\p{{N}}_$])",
         escaped
     ))
-    .expect("黑名单正则必须合法");
+    .expect("blocklist regex must be valid");
     cache.insert(keyword.to_string(), re.clone());
     re
 }
@@ -178,14 +178,14 @@ pub fn is_read_only_command(db_type: &DatabaseType, command: &str) -> Result<boo
 
 fn is_mongo_read_only_command(command: &str) -> Result<bool> {
     let parsed: Value = serde_json::from_str(command)
-        .map_err(|_| anyhow::anyhow!("MongoDB 命令必须是合法 JSON"))?;
+        .map_err(|_| anyhow::anyhow!("MongoDB command must be valid JSON"))?;
     let object = parsed
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须是对象"))?;
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command must be an object"))?;
     let (operation, payload) = object
         .iter()
         .next()
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令 JSON 不能为空"))?;
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command JSON must not be empty"))?;
     let operation = operation.to_lowercase();
     if !MONGO_READ_COMMANDS.contains(operation.as_str()) {
         return Ok(false);
@@ -322,15 +322,15 @@ fn find_oracle_quoted_literal_end(chars: &[char], start: usize) -> Option<usize>
 
 fn get_mongo_command_name(command: &str) -> Result<String> {
     let parsed: Value = serde_json::from_str(command)
-        .map_err(|_| anyhow::anyhow!("MongoDB 命令必须是合法 JSON"))?;
+        .map_err(|_| anyhow::anyhow!("MongoDB command must be valid JSON"))?;
     let object = parsed
         .as_object()
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令必须是对象"))?;
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command must be an object"))?;
     object
         .keys()
         .next()
         .cloned()
-        .ok_or_else(|| anyhow::anyhow!("MongoDB 命令 JSON 不能为空"))
+        .ok_or_else(|| anyhow::anyhow!("MongoDB command JSON must not be empty"))
 }
 
 #[cfg(test)]

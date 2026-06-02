@@ -43,7 +43,7 @@ pub async fn run_server() -> Result<()> {
             tokio::spawn(async move {
                 if let Err(error) = handle_stream(stream, manager, last_activity).await {
                     debug_log(&format!(
-                        "daemon 请求处理失败: {}",
+                        "daemon request handling failed: {}",
                         to_error_message(&error)
                     ));
                 }
@@ -70,7 +70,7 @@ pub async fn run_server() -> Result<()> {
             tokio::spawn(async move {
                 if let Err(error) = handle_stream(server, manager, last_activity).await {
                     debug_log(&format!(
-                        "daemon 请求处理失败: {}",
+                        "daemon request handling failed: {}",
                         to_error_message(&error)
                     ));
                 }
@@ -131,7 +131,7 @@ async fn build_response(payload: &str, manager: Arc<Mutex<DaemonConfigManager>>)
         }
     };
 
-    // 单个请求内部的业务错误必须通过协议写回，避免客户端误报 daemon 无响应。
+    // Business errors within a single request must be written back through the protocol to avoid the client falsely reporting that the daemon is unresponsive.
     match AssertUnwindSafe(handle_request(request, manager))
         .catch_unwind()
         .await
@@ -149,7 +149,10 @@ async fn build_response(payload: &str, manager: Arc<Mutex<DaemonConfigManager>>)
         Err(payload) => DaemonResponse {
             ok: false,
             data: None,
-            error: Some(format!("daemon 请求处理 panic: {}", panic_message(payload))),
+            error: Some(format!(
+                "daemon request handling panicked: {}",
+                panic_message(payload)
+            )),
         },
     }
 }
@@ -179,7 +182,7 @@ async fn handle_request(
         | DaemonAction::Reset => {
             let db = request
                 .db
-                .ok_or_else(|| anyhow::anyhow!("daemon 请求必须提供 db"))?;
+                .ok_or_else(|| anyhow::anyhow!("daemon request must provide db"))?;
             let current = {
                 let mut guard = manager.lock().await;
                 guard.get_manager(request.config_path).await?
@@ -189,13 +192,13 @@ async fn handle_request(
                 DaemonAction::Execute => {
                     let command = request
                         .command
-                        .ok_or_else(|| anyhow::anyhow!("execute 请求必须提供 command"))?;
+                        .ok_or_else(|| anyhow::anyhow!("execute request must provide command"))?;
                     Ok(serde_json::to_value(current.execute(&db, &command).await?)?)
                 }
                 DaemonAction::Metadata => {
                     let metadata = request
                         .metadata
-                        .ok_or_else(|| anyhow::anyhow!("metadata 请求必须提供 metadata"))?;
+                        .ok_or_else(|| anyhow::anyhow!("metadata request must provide metadata"))?;
                     Ok(serde_json::to_value(
                         current.metadata(&db, metadata).await?,
                     )?)
@@ -214,7 +217,7 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     if let Some(message) = payload.downcast_ref::<String>() {
         return message.clone();
     }
-    "未知 panic".to_string()
+    "unknown panic".to_string()
 }
 
 fn debug_log(message: &str) {

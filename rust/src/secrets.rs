@@ -35,7 +35,7 @@ fn config_dir(config_path: &Path) -> Result<PathBuf> {
     absolute
         .parent()
         .map(Path::to_path_buf)
-        .context("配置路径缺少父目录")
+        .context("config path is missing a parent directory")
 }
 
 fn secret_key_path(config_path: &Path) -> Result<PathBuf> {
@@ -60,13 +60,13 @@ fn load_or_create_secret_key(config_path: &Path) -> Result<[u8; 32]> {
 fn load_local_secret_key(config_path: &Path) -> Result<[u8; 32]> {
     let path = secret_key_path(config_path)?;
     let encoded = fs::read_to_string(&path)
-        .with_context(|| format!("读取本地密码密钥失败: {}", path.display()))?;
+        .with_context(|| format!("failed to read local secret key: {}", path.display()))?;
     let bytes = BASE64_STANDARD
         .decode(encoded.trim())
-        .context("读取本地密码密钥失败")?;
+        .context("failed to read local secret key")?;
     bytes
         .try_into()
-        .map_err(|_| anyhow::anyhow!("本地密码密钥长度非法"))
+        .map_err(|_| anyhow::anyhow!("local secret key has an invalid length"))
 }
 
 fn load_secrets(config_path: &Path) -> Result<SecretsFile> {
@@ -78,9 +78,10 @@ fn load_secrets(config_path: &Path) -> Result<SecretsFile> {
         });
     }
     let raw = fs::read_to_string(&path)?;
-    let secrets: SecretsFile = serde_json::from_str(&raw).context("secrets.json 解析失败")?;
+    let secrets: SecretsFile =
+        serde_json::from_str(&raw).context("failed to parse secrets.json")?;
     if secrets.version != SECRETS_VERSION {
-        anyhow::bail!("secrets.json 版本不支持");
+        anyhow::bail!("unsupported secrets.json version");
     }
     Ok(secrets)
 }
@@ -110,7 +111,7 @@ pub fn encrypt_secret(config_path: &Path, secret_ref: &str, plaintext: &str) -> 
     OsRng.fill_bytes(&mut nonce_bytes);
     let ciphertext = cipher
         .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_bytes())
-        .map_err(|_| anyhow::anyhow!("加密密码失败"))?;
+        .map_err(|_| anyhow::anyhow!("failed to encrypt secret"))?;
     let mut secrets = load_secrets(config_path)?;
     secrets.items.insert(
         secret_ref.to_string(),
@@ -128,18 +129,18 @@ pub fn decrypt_secret(config_path: &Path, secret_ref: &str) -> Result<String> {
     let item = secrets
         .items
         .get(secret_ref)
-        .ok_or_else(|| anyhow::anyhow!("未找到 secretRef 对应的本地密码: {secret_ref}"))?;
+        .ok_or_else(|| anyhow::anyhow!("no local secret found for secretRef: {secret_ref}"))?;
     let nonce = BASE64_STANDARD
         .decode(&item.nonce)
-        .context("本地密码 nonce 非法")?;
+        .context("local secret nonce is invalid")?;
     if nonce.len() != 12 {
-        anyhow::bail!("本地密码 nonce 长度非法");
+        anyhow::bail!("local secret nonce has an invalid length");
     }
     let ciphertext = BASE64_STANDARD
         .decode(&item.ciphertext)
-        .context("本地密码密文非法")?;
+        .context("local secret ciphertext is invalid")?;
     let plaintext = ChaCha20Poly1305::new(Key::from_slice(&key))
         .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
-        .map_err(|_| anyhow::anyhow!("解密本地密码失败: {secret_ref}"))?;
-    String::from_utf8(plaintext).context("本地密码编码非法")
+        .map_err(|_| anyhow::anyhow!("failed to decrypt local secret: {secret_ref}"))?;
+    String::from_utf8(plaintext).context("local secret has invalid encoding")
 }

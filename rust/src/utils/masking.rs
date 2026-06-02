@@ -12,7 +12,7 @@ pub fn mask_secret(value: &str) -> String {
     ];
     let mut output = value.to_string();
     for pattern in patterns {
-        let re = Regex::new(pattern).expect("脱敏正则必须合法");
+        let re = Regex::new(pattern).expect("masking regex must be valid");
         output = re.replace_all(&output, "$1***$2").to_string();
     }
     output

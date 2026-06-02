@@ -12,7 +12,7 @@ pub fn resolve_config_path() -> Result<PathBuf> {
     if let Ok(path) = env::var(CONFIG_ENV) {
         return Ok(PathBuf::from(path));
     }
-    let home = dirs::home_dir().context("无法解析用户主目录")?;
+    let home = dirs::home_dir().context("could not resolve user home directory")?;
     Ok(home.join(".agent-database-cli").join("config.json"))
 }
 
@@ -23,8 +23,9 @@ pub fn load_config(path: Option<PathBuf>) -> Result<AppConfig> {
     };
     migrate_plain_secrets(&path)?;
     let raw = fs::read_to_string(&path)
-        .with_context(|| format!("读取配置文件失败: {}", path.display()))?;
-    let mut config: AppConfig = serde_json::from_str(&raw).context("配置文件不是合法 JSON")?;
+        .with_context(|| format!("failed to read config file: {}", path.display()))?;
+    let mut config: AppConfig =
+        serde_json::from_str(&raw).context("config file is not valid JSON")?;
     resolve_secret_refs(&path, &mut config)?;
     validate_config(&config)?;
     Ok(config)
@@ -39,37 +40,39 @@ pub fn validate_config(config: &AppConfig) -> Result<()> {
 
 fn validate_database_config(name: &str, db: &DatabaseConfig) -> Result<()> {
     if db.url.trim().is_empty() {
-        anyhow::bail!("数据库配置 {name} 必须提供 url");
+        anyhow::bail!("database config {name} must provide url");
     }
     if db.redis_cluster.is_some() && db.db_type != DatabaseType::Redis {
-        anyhow::bail!("数据库配置 {name} 只有 redis 类型允许配置 redisCluster");
+        anyhow::bail!("database config {name}: redisCluster is only allowed for the redis type");
     }
     if let Some(cluster) = &db.redis_cluster {
         if cluster.nodes.is_empty() {
-            anyhow::bail!("数据库配置 {name} 的 redisCluster.nodes 必须是非空数组");
+            anyhow::bail!("database config {name}: redisCluster.nodes must be a non-empty array");
         }
         for (index, node) in cluster.nodes.iter().enumerate() {
             if node.trim().is_empty() {
-                anyhow::bail!("数据库配置 {name} 的 redisCluster.nodes[{index}] 必须是非空字符串");
+                anyhow::bail!("database config {name}: redisCluster.nodes[{index}] must be a non-empty string");
             }
             let parsed = url::Url::parse(node).with_context(|| {
-                format!("数据库配置 {name} 的 redisCluster.nodes[{index}] 不是合法 URL")
+                format!("database config {name}: redisCluster.nodes[{index}] is not a valid URL")
             })?;
             if parsed.scheme() != "redis" && parsed.scheme() != "rediss" {
                 anyhow::bail!(
-                    "数据库配置 {name} 的 redisCluster.nodes[{index}] 只支持 redis:// 或 rediss://"
+                    "database config {name}: redisCluster.nodes[{index}] only supports redis:// or rediss://"
                 );
             }
         }
     }
     if let Some(keep_alive) = db.keep_alive_seconds {
         if keep_alive == 0 {
-            anyhow::bail!("数据库配置 {name} 的 keepAliveSeconds 必须是正整数");
+            anyhow::bail!("database config {name}: keepAliveSeconds must be a positive integer");
         }
     }
     if let Some(driver) = &db.oracle_driver {
         if db.db_type != DatabaseType::Oracle {
-            anyhow::bail!("数据库配置 {name} 只有 oracle 类型允许配置 oracleDriver");
+            anyhow::bail!(
+                "database config {name}: oracleDriver is only allowed for the oracle type"
+            );
         }
         match driver {
             OracleDriver::Oracle | OracleDriver::Sqlcl | OracleDriver::Oracledb => {}
@@ -77,23 +80,27 @@ fn validate_database_config(name: &str, db: &DatabaseConfig) -> Result<()> {
     }
     if let Some(tunnel) = &db.ssh_tunnel {
         if tunnel.host.trim().is_empty() {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.host 必须是非空字符串");
+            anyhow::bail!("database config {name}: sshTunnel.host must be a non-empty string");
         }
         if tunnel.username.trim().is_empty() {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.username 必须是非空字符串");
+            anyhow::bail!("database config {name}: sshTunnel.username must be a non-empty string");
         }
         if tunnel.password.as_deref() == Some("") && tunnel.password_ref.is_none() {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.password 不能为空字符串");
+            anyhow::bail!("database config {name}: sshTunnel.password must not be an empty string");
         }
         if tunnel.private_key_path.as_deref() == Some("") {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.privateKeyPath 不能为空字符串");
+            anyhow::bail!(
+                "database config {name}: sshTunnel.privateKeyPath must not be an empty string"
+            );
         }
         if tunnel.private_key.as_deref() == Some("") {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.privateKey 不能为空字符串");
+            anyhow::bail!(
+                "database config {name}: sshTunnel.privateKey must not be an empty string"
+            );
         }
         if tunnel.private_key_path.is_some() && tunnel.private_key.is_some() {
             anyhow::bail!(
-                "数据库配置 {name} 的 sshTunnel.privateKeyPath 和 privateKey 只能配置一个"
+                "database config {name}: only one of sshTunnel.privateKeyPath and privateKey may be configured"
             );
         }
         if tunnel.password.is_none()
@@ -102,17 +109,19 @@ fn validate_database_config(name: &str, db: &DatabaseConfig) -> Result<()> {
             && tunnel.private_key.is_none()
         {
             anyhow::bail!(
-                "数据库配置 {name} 的 sshTunnel 必须配置 password、privateKeyPath 或 privateKey"
+                "database config {name}: sshTunnel must configure password, privateKeyPath, or privateKey"
             );
         }
         if tunnel.passphrase.as_deref() == Some("") && tunnel.passphrase_ref.is_none() {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.passphrase 不能为空字符串");
+            anyhow::bail!(
+                "database config {name}: sshTunnel.passphrase must not be an empty string"
+            );
         }
         if (tunnel.passphrase.is_some() || tunnel.passphrase_ref.is_some())
             && tunnel.private_key_path.is_none()
             && tunnel.private_key.is_none()
         {
-            anyhow::bail!("数据库配置 {name} 的 sshTunnel.passphrase 只能和私钥一起使用");
+            anyhow::bail!("database config {name}: sshTunnel.passphrase can only be used together with a private key");
         }
     }
     Ok(())
@@ -122,7 +131,7 @@ pub fn get_database_config<'a>(config: &'a AppConfig, name: &str) -> Result<&'a 
     config
         .databases
         .get(name)
-        .ok_or_else(|| anyhow::anyhow!("未找到数据库配置: {name}"))
+        .ok_or_else(|| anyhow::anyhow!("database config not found: {name}"))
 }
 
 pub fn list_supported_databases() -> Vec<&'static str> {
@@ -135,17 +144,17 @@ fn secret_ref_for(db_name: &str, field: &str) -> String {
 
 fn migrate_plain_secrets(path: &PathBuf) -> Result<()> {
     let raw = fs::read_to_string(path)
-        .with_context(|| format!("读取配置文件失败: {}", path.display()))?;
-    let mut root: Value = serde_json::from_str(&raw).context("配置文件不是合法 JSON")?;
+        .with_context(|| format!("failed to read config file: {}", path.display()))?;
+    let mut root: Value = serde_json::from_str(&raw).context("config file is not valid JSON")?;
     let databases = root
         .get_mut("databases")
         .and_then(Value::as_object_mut)
-        .context("配置文件缺少 databases 对象")?;
+        .context("config file is missing the databases object")?;
     let mut migrated = false;
     for (name, value) in databases {
         let object = value
             .as_object_mut()
-            .ok_or_else(|| anyhow::anyhow!("数据库配置 {name} 必须是对象"))?;
+            .ok_or_else(|| anyhow::anyhow!("database config {name} must be an object"))?;
         if migrate_url_password(path, name, object)? {
             migrated = true;
         }
@@ -198,7 +207,7 @@ fn migrate_url_password(
     encrypt_secret(path, &password_ref, &password)?;
     parsed
         .set_password(Some(""))
-        .map_err(|_| anyhow::anyhow!("数据库配置 {db_name} 的 url 用户信息非法"))?;
+        .map_err(|_| anyhow::anyhow!("database config {db_name}: url user info is invalid"))?;
     object.insert("url".to_string(), Value::String(parsed.to_string()));
     object.insert("passwordRef".to_string(), Value::String(password_ref));
     Ok(true)
@@ -258,8 +267,8 @@ fn resolve_url_password_ref(path: &PathBuf, name: &str, db: &mut DatabaseConfig)
     if db.password_ref.is_none() {
         return Ok(());
     }
-    let mut parsed =
-        Url::parse(&db.url).with_context(|| format!("数据库配置 {name} 的 url 不是合法 URL"))?;
+    let mut parsed = Url::parse(&db.url)
+        .with_context(|| format!("database config {name}: url is not a valid URL"))?;
     if parsed
         .password()
         .map(|password| !password.is_empty())
@@ -267,11 +276,14 @@ fn resolve_url_password_ref(path: &PathBuf, name: &str, db: &mut DatabaseConfig)
     {
         return Ok(());
     }
-    let password_ref = db.password_ref.as_deref().expect("password_ref 已检查");
+    let password_ref = db
+        .password_ref
+        .as_deref()
+        .expect("password_ref already checked");
     let password = decrypt_secret(path, password_ref)?;
     parsed
         .set_password(Some(&password))
-        .map_err(|_| anyhow::anyhow!("数据库配置 {name} 的 url 用户信息非法"))?;
+        .map_err(|_| anyhow::anyhow!("database config {name}: url user info is invalid"))?;
     db.url = parsed.to_string();
     Ok(())
 }
@@ -284,10 +296,10 @@ mod tests {
     fn temp_config_path(name: &str) -> PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("系统时间早于 UNIX_EPOCH")
+            .expect("system time is earlier than UNIX_EPOCH")
             .as_nanos();
         let dir = env::temp_dir().join(format!("agent-database-cli-{name}-{unique}"));
-        fs::create_dir_all(&dir).expect("创建临时目录失败");
+        fs::create_dir_all(&dir).expect("failed to create temp directory");
         dir.join("config.json")
     }
 
@@ -305,13 +317,16 @@ mod tests {
   }
 }"#,
         )
-        .expect("写入配置失败");
+        .expect("failed to write config");
 
-        let config = load_config(Some(path.clone())).expect("加载配置失败");
-        let db = config.databases.get("mysql-app").expect("缺少数据库配置");
+        let config = load_config(Some(path.clone())).expect("failed to load config");
+        let db = config
+            .databases
+            .get("mysql-app")
+            .expect("missing database config");
         assert_eq!(db.password_ref.as_deref(), Some("agentdbcli:mysql-app:url"));
         assert!(db.url.contains("user:secret@"));
-        let raw = fs::read_to_string(&path).expect("读取配置失败");
+        let raw = fs::read_to_string(&path).expect("failed to read config");
         assert!(!raw.contains("secret"));
         assert!(raw.contains(r#""passwordRef": "agentdbcli:mysql-app:url""#));
     }
@@ -337,14 +352,14 @@ mod tests {
   }
 }"#,
         )
-        .expect("写入配置失败");
+        .expect("failed to write config");
 
-        let config = load_config(Some(path.clone())).expect("加载配置失败");
+        let config = load_config(Some(path.clone())).expect("failed to load config");
         let tunnel = config
             .databases
             .get("pg-via-ssh")
             .and_then(|db| db.ssh_tunnel.as_ref())
-            .expect("缺少 SSH 隧道配置");
+            .expect("missing SSH tunnel config");
         assert_eq!(tunnel.password.as_deref(), Some("ssh-secret"));
         assert_eq!(tunnel.passphrase.as_deref(), Some("key-secret"));
         assert_eq!(
@@ -355,7 +370,7 @@ mod tests {
             tunnel.passphrase_ref.as_deref(),
             Some("agentdbcli:pg-via-ssh:sshPassphrase")
         );
-        let raw = fs::read_to_string(&path).expect("读取配置失败");
+        let raw = fs::read_to_string(&path).expect("failed to read config");
         assert!(!raw.contains("ssh-secret"));
         assert!(!raw.contains("key-secret"));
     }

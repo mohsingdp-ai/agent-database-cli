@@ -1,44 +1,44 @@
-# 性能说明（Performance）
+# Performance
 
-`agent-database-cli` 面向 Agent 高频查询场景做了多层优化。本文说明各项命令的实测延迟、优化原理，以及如何在你的场景里拿到最低延迟。
+`agent-database-cli` is optimized at several layers for the high-frequency query workloads typical of agents. This document explains the measured latency of each command, the principles behind the optimizations, and how to get the lowest latency in your own setup.
 
-## 实测延迟（Windows，本地 Postgres，热路径）
+## Measured latency (Windows, local Postgres, hot path)
 
-| 方式 | 每次查询 | 说明 |
+| Approach | Per query | Notes |
 | --- | --- | --- |
-| 早期（Node shim + 旧二进制） | ~119 ms | 优化前的基线 |
-| `exec`（每次新建进程） | ~19 ms | 一次性命令；下限是操作系统创建进程的开销 |
-| `repl`（常驻进程读取 stdin） | **~0.6 ms** | 进程只启动一次，逐行执行 |
-| MCP（`agent-database-cli-mcp`） | **~1.7 ms** | 常驻会话 + 活动数据库上下文 |
-| 裸 daemon 往返（无进程启动） | ~0.86 ms | 命名管道 + 连接池查询 |
+| Early (Node shim + old binary) | ~119 ms | Pre-optimization baseline |
+| `exec` (new process each time) | ~19 ms | One-off command; the floor is the OS process-creation cost |
+| `repl` (resident process reading stdin) | **~0.6 ms** | Process starts once, executes line by line |
+| MCP (`agent-database-cli-mcp`) | **~1.7 ms** | Persistent session + active database context |
+| Raw daemon round trip (no process startup) | ~0.86 ms | Named pipe + connection-pool query |
 
-## 核心原则：把固定开销移出"每次查询"的路径
+## Core principle: move fixed costs off the "per query" path
 
 ```
-慢： 启动重进程 ──► 重新建库连接 ──► 每次重复计算 ──► 执行查询
-快： [常驻客户端] ──► [复用的连接池] ──► [缓存好的计算] ──► 执行查询
-      （只付一次启动）   （只付一次连接）    （只编译一次）
+Slow: start heavy process ──► rebuild DB connection ──► recompute every time ──► run query
+Fast: [resident client] ──► [reused connection pool] ──► [cached computation] ──► run query
+      (startup paid once)    (connection paid once)    (compiled once)
 ```
 
-按收益从大到小：
+In order of impact, largest to smallest:
 
-1. **不要每条查询都新建进程。** 一次性 shell 命令每次都要付操作系统创建进程的开销（Windows 约 5–15 ms，不可消除）。要更快只能让**一个常驻进程**服务多条查询：`repl` 或 MCP 服务。
-2. **常驻 daemon 复用昂贵状态。** 数据库连接（TCP/鉴权/SSH 隧道）建立代价高；本地 daemon 保持连接常驻，单条查询不含重连成本。
-3. **缓存每次请求里重复的计算。** 关键优化：只读 SQL 的安全检查此前对约 16 个写关键字**每次都重新编译正则**，单次 exec 仅正则编译就约 28 ms。改为进程级缓存后，daemon 往返从约 28.5 ms 降到约 0.86 ms。
-4. **把重运行时/大体积从热路径移除。** Node 启动器仅为转发就要约 145 ms；已改为 `postinstall` 直接调用原生二进制。
-5. **减少往返。** 去掉每次命令前的 `is_daemon_running` 探测（两次往返→一次），原生热路径从约 99 ms 降到约 50 ms。
-6. **后台进程不要拖住调用方。** daemon 启动时与调用方分离（Windows 清除标准句柄继承；Unix `setsid`），避免管道读取在冷启动时挂起。
+1. **Don't spawn a new process for every query.** A one-off shell command pays the OS process-creation cost every time (about 5-15 ms on Windows, unavoidable). To go faster, let a **single resident process** serve many queries: `repl` or the MCP server.
+2. **A resident daemon reuses expensive state.** Establishing a database connection (TCP / authentication / SSH tunnel) is costly; the local daemon keeps connections resident, so a single query carries no reconnection cost.
+3. **Cache computations that repeat on every request.** The key optimization: the safety check for read-only SQL previously **recompiled the regex every time** for about 16 write keywords, so a single exec spent about 28 ms on regex compilation alone. With process-level caching, a daemon round trip dropped from about 28.5 ms to about 0.86 ms.
+4. **Move heavy runtimes / large footprints off the hot path.** The Node launcher cost about 145 ms just to forward; it has been changed to call the native binary directly via `postinstall`.
+5. **Reduce round trips.** Removing the `is_daemon_running` probe before each command (two round trips → one) lowered the native hot path from about 99 ms to about 50 ms.
+6. **Background processes must not block the caller.** The daemon detaches from the caller at startup (Windows clears standard-handle inheritance; Unix `setsid`), avoiding a pipe read hanging on cold start.
 
-> 排查顺序永远是"先测量、再分解"。本项目最大的开销（正则编译）在测量前完全不可见，而 IPC 本身只有 0.37 ms。
+> The order is always "measure first, then decompose." This project's biggest cost (regex compilation) was completely invisible before measurement, while the IPC itself is only 0.37 ms.
 
-## 怎么用最快
+## How to go fastest
 
-- **一次性查询**：`agent-database-cli exec --db <name> --command "<sql>"`（约 19 ms）。
-- **连续大量查询（脚本/管道）**：用 `repl`，一个进程喂多条 SQL：
+- **One-off query**: `agent-database-cli exec --db <name> --command "<sql>"` (about 19 ms).
+- **Many queries in a row (scripts / pipelines)**: use `repl` and feed multiple SQL statements to a single process:
   ```bash
   printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db <name>
   ```
-  每条约 0.6 ms。
-- **Agent 持续查询并随时切库**：用 MCP 服务 `agent-database-cli-mcp`。`use_database` 设置活动上下文，`query` / `describe` 针对当前库执行，每次调用约 1.7 ms，且无需每次新建进程。
+  About 0.6 ms each.
+- **Agent that queries continuously and switches databases on the fly**: use the MCP server `agent-database-cli-mcp`. `use_database` sets the active context, `query` / `describe` run against the current database, each call takes about 1.7 ms, and there is no per-call process spawn.
 
-`repl` 与 MCP 是 daemon 的两个**并列**客户端：MCP 不会调用 `repl`，二者各自复用"常驻进程 + 热 daemon"独立达到亚毫秒级。
+`repl` and MCP are two **parallel** clients of the daemon: MCP does not call `repl`; each independently reaches sub-millisecond latency by reusing a "resident process + warm daemon."

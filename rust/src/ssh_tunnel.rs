@@ -26,7 +26,7 @@ impl Drop for StartedSshTunnel {
         for task in &self._tasks {
             task.abort();
         }
-        // russh Handle drop 会关闭底层连接；这里不在 Drop 中 await disconnect。
+        // Dropping the russh Handle closes the underlying connection; we do not await disconnect inside Drop here.
     }
 }
 
@@ -102,7 +102,7 @@ async fn start_redis_cluster_tunnel(
     for node_url in &config
         .redis_cluster
         .as_ref()
-        .expect("Redis Cluster 配置存在")
+        .expect("Redis Cluster config exists")
         .nodes
     {
         let endpoint = parse_redis_cluster_node(node_url)?;
@@ -138,7 +138,7 @@ async fn start_redis_cluster_tunnel(
 
     let first_port = local_nodes
         .first()
-        .context("Redis Cluster 节点不能为空")?
+        .context("Redis Cluster nodes must not be empty")?
         .parse::<Url>()?
         .port()
         .unwrap_or(REDIS_PORT);
@@ -186,7 +186,7 @@ async fn spawn_forward_listener(
             let endpoint = endpoint.clone();
             tokio::spawn(async move {
                 if let Err(error) = forward_once(local_stream, session, endpoint).await {
-                    eprintln!("SSH 隧道转发失败: {error}");
+                    eprintln!("SSH tunnel forwarding failed: {error}");
                 }
             });
         }
@@ -284,7 +284,7 @@ async fn connect_session(tunnel: &SshTunnelConfig) -> Result<Handle<ClientHandle
         false
     };
     if !authenticated {
-        anyhow::bail!("SSH 认证失败");
+        anyhow::bail!("SSH authentication failed");
     }
     Ok(session)
 }
@@ -296,24 +296,26 @@ pub fn rewrite_database_url(
     port: u16,
 ) -> Result<String> {
     if *db_type == DatabaseType::Mongodb && is_mongo_multi_host_url(value) {
-        anyhow::bail!("SSH 隧道暂不支持 MongoDB 多 host URL");
+        anyhow::bail!("SSH tunnel does not yet support MongoDB multi-host URLs");
     }
     let mut parsed = Url::parse(value)?;
     parsed.set_host(Some(host))?;
     parsed
         .set_port(Some(port))
-        .map_err(|_| anyhow::anyhow!("数据库 URL 端口改写失败"))?;
+        .map_err(|_| anyhow::anyhow!("failed to rewrite database URL port"))?;
     Ok(parsed.to_string())
 }
 
 fn parse_database_endpoint(db_type: &DatabaseType, value: &str) -> Result<DatabaseEndpoint> {
     if *db_type == DatabaseType::Mongodb && is_mongo_multi_host_url(value) {
-        anyhow::bail!("SSH 隧道暂不支持 MongoDB 多 host URL");
+        anyhow::bail!("SSH tunnel does not yet support MongoDB multi-host URLs");
     }
     let parsed = Url::parse(value)?;
     let host = parsed
         .host_str()
-        .ok_or_else(|| anyhow::anyhow!("数据库 URL 必须包含 host 才能建立 SSH 隧道"))?
+        .ok_or_else(|| {
+            anyhow::anyhow!("database URL must include a host to establish an SSH tunnel")
+        })?
         .to_string();
     Ok(DatabaseEndpoint {
         host,
@@ -325,7 +327,7 @@ fn parse_redis_cluster_node(value: &str) -> Result<DatabaseEndpoint> {
     let parsed = Url::parse(value)?;
     let host = parsed
         .host_str()
-        .ok_or_else(|| anyhow::anyhow!("Redis Cluster 节点 URL 必须包含 host"))?
+        .ok_or_else(|| anyhow::anyhow!("Redis Cluster node URL must include a host"))?
         .to_string();
     Ok(DatabaseEndpoint {
         host,
@@ -361,10 +363,12 @@ fn is_mongo_multi_host_url(value: &str) -> bool {
 
 fn resolve_home_path(path: &str) -> Result<PathBuf> {
     if path == "~" {
-        return dirs::home_dir().context("无法解析用户主目录");
+        return dirs::home_dir().context("could not resolve user home directory");
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        return Ok(dirs::home_dir().context("无法解析用户主目录")?.join(rest));
+        return Ok(dirs::home_dir()
+            .context("could not resolve user home directory")?
+            .join(rest));
     }
     Ok(PathBuf::from(path))
 }

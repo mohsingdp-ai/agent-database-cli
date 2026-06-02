@@ -34,7 +34,7 @@ pub async fn send_daemon_request(request: &DaemonRequest) -> Result<DaemonRespon
 fn parse_daemon_response(buffer: &str) -> Result<DaemonResponse> {
     let payload = buffer.trim();
     if payload.is_empty() {
-        anyhow::bail!("daemon 在写回结果前异常退出，未返回错误详情；请使用 AGENT_DATABASE_CLI_DEBUG=1 重跑查看 daemon 侧错误");
+        anyhow::bail!("daemon exited unexpectedly before writing back a result and returned no error details; rerun with AGENT_DATABASE_CLI_DEBUG=1 to see the daemon-side error");
     }
     Ok(serde_json::from_str(payload)?)
 }

@@ -47,7 +47,7 @@ impl OracleSqlclAdapter {
         }
         let output = command
             .output()
-            .map_err(|error| anyhow::anyhow!("SQLcl 启动失败: {}", error))?;
+            .map_err(|error| anyhow::anyhow!("failed to start SQLcl: {}", error))?;
         let stdout = strip_ansi(&String::from_utf8_lossy(&output.stdout));
         let stderr = strip_ansi(&String::from_utf8_lossy(&output.stderr));
         let combined = [stdout.trim(), stderr.trim()]
@@ -63,7 +63,10 @@ impl OracleSqlclAdapter {
             );
         }
         if contains_sqlcl_error(&combined) || !output.status.success() {
-            anyhow::bail!("{}", mask_secret(&format!("SQLcl 执行失败: {combined}")));
+            anyhow::bail!(
+                "{}",
+                mask_secret(&format!("SQLcl execution failed: {combined}"))
+            );
         }
         parse_sqlcl_output(&stdout, markers)
     }
@@ -73,7 +76,8 @@ impl OracleSqlclAdapter {
     }
 
     fn build_connect_string(&self) -> String {
-        let parsed = Url::parse(&self.url).expect("Oracle URL 已在配置阶段校验");
+        let parsed =
+            Url::parse(&self.url).expect("Oracle URL was validated during the configuration phase");
         let user = percent_decode(parsed.username());
         let password = quote_password(&percent_decode(parsed.password().unwrap_or("")));
         let service = parsed.path().trim_start_matches('/');
@@ -109,12 +113,15 @@ impl DatabaseAdapter for OracleSqlclAdapter {
             MetadataType::Columns => {
                 let table = request
                     .table
-                    .ok_or_else(|| anyhow::anyhow!("columns 元信息查询必须提供 --table"))?
+                    .ok_or_else(|| anyhow::anyhow!("columns metadata query must provide --table"))?
                     .replace('\'', "''")
                     .to_uppercase();
                 self.execute(&format!("select table_name, column_name, data_type from user_tab_columns where table_name = '{}' order by column_id", table)).await
             }
-            _ => anyhow::bail!("当前数据库不支持元信息类型: {:?}", request.request_type),
+            _ => anyhow::bail!(
+                "the current database does not support metadata type: {:?}",
+                request.request_type
+            ),
         }
     }
 }

@@ -1,15 +1,15 @@
-# AI 安装说明
+# AI Installation Guide
 
-使用本工具时，先按下面步骤安装 CLI 和 skill。
+When using this tool, first install the CLI and skill by following the steps below.
 
-## 1. 安装 CLI
+## 1. Install the CLI
 
 ```bash
 npm install -g agent-database-cli
 agent-database-cli --help
 ```
 
-如果 npm 包安装受限，使用等价的源码安装方式：
+If installing the npm package is restricted, use the equivalent source-based installation:
 
 ```powershell
 git clone https://github.com/sleepinginsummer/agent-database-cli.git
@@ -20,57 +20,57 @@ npm link
 agent-database-cli --help
 ```
 
-如果 `agent-database-cli --help` 失败，先检查：
+If `agent-database-cli --help` fails, first check:
 
 ```bash
 node --version
 npm --version
 ```
 
-需要 Node.js `>= 20` 和 npm `>= 10`。当前预编译二进制支持 macOS x64/arm64、Linux x64/arm64、Windows x64。
+Requires Node.js `>= 20` and npm `>= 10`. The current prebuilt binaries support macOS x64/arm64, Linux x64/arm64, and Windows x64.
 
-## 2. 初始化配置目录
+## 2. Initialize the Configuration Directory
 
 ```bash
 mkdir -p ~/.agent-database-cli
 ```
 
-然后创建并编辑：
+Then create and edit:
 
 ```text
 ~/.agent-database-cli/config.json
 ```
 
-配置内容可参考项目中的 `https://github.com/sleepinginsummer/agent-database-cli/blob/main/config/docker-test.json`。配置文件保存真实数据库连接信息，不要公开。可以询问用户如何配置数据库连接，或告知用户配置目录。
+For the configuration content, refer to `https://github.com/sleepinginsummer/agent-database-cli/blob/main/config/docker-test.json` in the project. The configuration file stores real database connection information, so do not make it public. You can ask the user how to configure the database connections, or tell the user where the configuration directory is.
 
-## 3. 安装 skill
+## 3. Install the Skill
 
-`agent-database-cli install-skill` 使用 CLI 包内置的 `skills/agent-database-cli` 作为来源。先展示真实计划，确认后再安装：
+`agent-database-cli install-skill` uses the `skills/agent-database-cli` bundled in the CLI package as the source. Show the actual plan first, then install after confirmation:
 
 ```bash
 agent-database-cli install-skill --dry-run
 agent-database-cli install-skill
 ```
 
-需要跳过交互确认时使用：
+To skip the interactive confirmation, use:
 
 ```bash
 agent-database-cli install-skill --yes
 ```
 
-主安装目录为 `~/.agents/skills/agent-database-cli`。Codex、Claude、Kimi CLI、Cursor、Gemini 等已存在的 skill 父目录会创建软链接；已存在且不是软链接的目标不会被覆盖。
+The main installation directory is `~/.agents/skills/agent-database-cli`. Symlinks are created in the existing skill parent directories for Codex, Claude, Kimi CLI, Cursor, Gemini, and others; existing targets that are not symlinks will not be overwritten.
 
-## 4. 更新
+## 4. Update
 
 ```bash
 npm install -g agent-database-cli@latest
 ```
-## 5. 验证测试
-配置完成后，测试执行：
+## 5. Verification Test
+After configuration is complete, run a test:
 
 ```bash
 agent-database-cli list
 agent-database-cli test --db <databaseName>
 ```
 
-拿到数据库配置名后，再执行 `exec`、`meta` 或 `reset`。
+Once you have the database configuration name, run `exec`, `meta`, or `reset`.

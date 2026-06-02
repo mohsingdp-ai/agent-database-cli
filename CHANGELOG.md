@@ -2,6 +2,7 @@
 
 ## 0.2.22
 
+- 新功能：新增 MCP 服务（`agent-database-cli-mcp`，基于 stdio）。作为常驻有状态会话：用 `use_database` 设置活动数据库上下文，`query` / `describe` 针对当前上下文执行，每次工具调用直接走常驻 daemon 命名管道（约 1–2ms，无需每次新建进程）。提供 `list_databases`、`use_database`、`query`、`describe`、`current_context` 工具，daemon 未运行时自动拉起。最适合 Agent 持续查询并随时切库的场景。
 - 新功能：新增 `repl` 子命令，从 stdin 逐行读取 SQL 并复用同一进程与 daemon 连接执行，逐行输出 JSON。进程启动开销只付一次，单条查询稳定在约 0.6–2ms（对比 `exec` 每次新建进程的约 20ms，约 16x）。适合 Agent 连续执行大量查询。
 - 性能优化：缓存安全检查的关键字正则。此前 `has_blacklisted_keyword` 每次命令都重新编译正则，只读 SELECT 会对约 16 个写关键字各编译一次，单次 exec 仅正则编译就约 28ms。改为进程级缓存后，daemon 单次往返从约 28.5ms 降到约 0.86ms，进程级 exec 从约 45ms 降到约 20ms。
 - 性能优化：移除热路径上的 Node.js 启动开销。安装时通过 `postinstall` 将启动器 shim 改写为直接调用平台原生二进制，纯启动耗时约从 74ms 降到 27ms；`bin/agent-database-cli.js` 作为 `--ignore-scripts` 等场景的回退保留。

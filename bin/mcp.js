@@ -7,9 +7,7 @@
 // there is no per-query process spawn -- each query is just the daemon round
 // trip (~1ms). Switch databases any time with `use_database`.
 import net from "node:net";
-import crypto from "node:crypto";
 import os from "node:os";
-import path from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -24,25 +22,13 @@ import {
 const CONFIG_ENV = "AGENT_DATABASE_CLI_CONFIG";
 
 // ---------------------------------------------------------------------------
-// Paths (must match the Rust daemon's derivation in daemon/paths.rs)
+// Config path (matches the Rust daemon's resolve_config_path)
 // ---------------------------------------------------------------------------
 function configPath() {
   return (
     process.env[CONFIG_ENV] ||
     join(os.homedir(), ".agent-database-cli", "config.json")
   );
-}
-
-function socketPath() {
-  if (process.platform === "win32") {
-    const hash = crypto
-      .createHash("sha1")
-      .update(Buffer.from(os.homedir(), "utf8"))
-      .digest("hex")
-      .slice(0, 12);
-    return "\\\\.\\pipe\\agent-database-cli-" + hash;
-  }
-  return join(os.homedir(), ".agent-database-cli", "agent-database-cli.sock");
 }
 
 // Resolve the native binary (platform sub-package, with repo/dev fallbacks).
@@ -72,10 +58,15 @@ function nativeBinary() {
 
 // ---------------------------------------------------------------------------
 // Daemon transport
+//
+// The socket/pipe address is NOT re-derived here. `daemon start` returns the
+// authoritative address the daemon actually bound (control.rs), so we use that
+// and avoid any cross-language derivation mismatch (Node os.homedir() vs Rust
+// dirs::home_dir()).
 // ---------------------------------------------------------------------------
-function transport(request, timeoutMs = 30000) {
+function transport(address, request, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const sock = net.connect(socketPath());
+    const sock = net.connect(address);
     let buf = "";
     let settled = false;
     const done = (fn, arg) => {
@@ -106,29 +97,46 @@ function transport(request, timeoutMs = 30000) {
   });
 }
 
-let daemonStarted = false;
-function startDaemonOnce() {
-  if (daemonStarted) return;
-  daemonStarted = true;
+// Start the daemon (idempotent) and learn the authoritative socket address it
+// bound. `daemon start` returns {"started":bool,"socket":"..."} on both the
+// already-running and just-started paths, and only returns once the daemon is
+// reachable, so its address is safe to use immediately.
+let socketAddress = null;
+function ensureDaemon() {
   const bin = nativeBinary();
   if (!bin) throw new Error("找不到 agent-database-cli 原生二进制，无法启动 daemon");
-  spawnSync(bin, ["daemon", "start"], { stdio: "ignore" });
+  const result = spawnSync(bin, ["daemon", "start"], { encoding: "utf8" });
+  if (result.status !== 0) {
+    throw new Error("启动 daemon 失败: " + (result.stderr || "").trim());
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    throw new Error("无法解析 daemon start 输出: " + result.stdout);
+  }
+  if (!parsed.socket) throw new Error("daemon start 未返回 socket 地址");
+  socketAddress = parsed.socket;
+  return socketAddress;
 }
 
-// Send a request; on transport failure start the daemon and retry briefly.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Send a request; on transport failure (re)start the daemon and retry briefly.
 async function callDaemon(action, extra = {}) {
   const request = { action, configPath: configPath(), ...extra };
+  if (!socketAddress) ensureDaemon();
   try {
-    return unwrap(await transport(request));
+    return unwrap(await transport(socketAddress, request));
   } catch (first) {
-    startDaemonOnce();
+    ensureDaemon();
     let lastError = first;
-    for (let i = 0; i < 30; i += 1) {
-      await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 20; i += 1) {
       try {
-        return unwrap(await transport(request));
+        return unwrap(await transport(socketAddress, request));
       } catch (error) {
         lastError = error;
+        await sleep(100);
       }
     }
     throw lastError;

@@ -102,6 +102,40 @@ agent-database-cli install-skill --dry-run
 agent-database-cli install-skill
 ```
 
+## Usage
+
+Common commands (configure your connection names first — see below):
+
+```bash
+agent-database-cli list                                   # supported types + configured connections
+agent-database-cli test --db local-mysql                  # test a connection
+agent-database-cli exec --db local-mysql --command "select 1"
+agent-database-cli meta --db local-mysql --type tables    # tables/columns/collections/keys
+agent-database-cli --format table exec --db local-mysql --command "select 1"  # table output
+```
+
+The first command that needs the daemon auto-starts a local connection daemon (which reuses DB connections and exits when idle).
+
+### High-frequency queries (sub-millisecond)
+
+A one-off command spawns a fresh process each time (~19ms). For many queries in a row, let one persistent process serve them all:
+
+- **`repl`**: reads one SQL statement per stdin line, reusing the same process and daemon connection, emitting one JSON result per line (~0.6ms each).
+
+  ```bash
+  printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db local-mysql
+  ```
+
+- **MCP server** (`agent-database-cli-mcp`): a persistent stateful session, ideal for agents. `use_database` sets the active database context; `query` / `describe` run against it (~1.7ms per call); switch databases any time. Register it once in your MCP client, e.g.:
+
+  ```bash
+  claude mcp add agent-db -- agent-database-cli-mcp
+  ```
+
+  Tools: `list_databases`, `use_database`, `query`, `describe`, `current_context`; auto-starts the daemon if it is not running.
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the rationale and measured numbers.
+
 ## Configuration
 
 Default configuration file:

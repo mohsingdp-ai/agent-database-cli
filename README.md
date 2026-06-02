@@ -89,6 +89,40 @@ agent-database-cli install-skill --dry-run
 agent-database-cli install-skill
 ```
 
+## 用法
+
+常用命令（先在配置文件里配置好连接名，见下文）：
+
+```bash
+agent-database-cli list                                   # 列出支持的类型与已配置连接
+agent-database-cli test --db local-mysql                  # 测试连接
+agent-database-cli exec --db local-mysql --command "select 1"
+agent-database-cli meta --db local-mysql --type tables    # 表/列/集合/keys 元信息
+agent-database-cli --format table exec --db local-mysql --command "select 1"  # 表格输出
+```
+
+首次执行任意需要 daemon 的命令时会自动拉起本地连接 daemon，复用数据库连接；空闲后自动退出。
+
+### 高频查询（亚毫秒级）
+
+一次性命令每次都要新建进程（约 19ms）。需要连续执行大量查询时，让一个常驻进程服务多条查询：
+
+- **`repl`**：从 stdin 逐行读取 SQL，复用同一进程与 daemon 连接，逐行输出 JSON，每条约 0.6ms。
+
+  ```bash
+  printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db local-mysql
+  ```
+
+- **MCP 服务**（`agent-database-cli-mcp`）：常驻有状态会话，最适合 Agent。`use_database` 设置活动数据库上下文，`query` / `describe` 针对当前库执行，每次调用约 1.7ms，随时切库。在 MCP 客户端注册一次即可，例如：
+
+  ```bash
+  claude mcp add agent-db -- agent-database-cli-mcp
+  ```
+
+  工具：`list_databases`、`use_database`、`query`、`describe`、`current_context`；daemon 未运行时自动拉起。
+
+更多原理与实测数据见 [docs/PERFORMANCE.md](docs/PERFORMANCE.md)。
+
 ## 配置
 
 默认配置文件：

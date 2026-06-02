@@ -17,8 +17,6 @@ MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command b
 
 [AI One-Click Installation](#ai-one-click-installation) · [Installation](#installation) · [Configuration](#configuration) · [Permission Configuration](#permission-configuration) · [Oracle SQLcl](#oracle-sqlcl) · [License](#license) · [Friendly Links](#friendly-links)
 
-English | [中文](README_ZH.md)
-
 </div>
 
 ## Introduction

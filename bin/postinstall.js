@@ -26,7 +26,12 @@ const packageByPlatform = {
   "win32-x64": "@agent-database-cli/win32-x64"
 };
 
-const BIN_NAME = "agent-database-cli";
+// The native binary inside the platform sub-package is always named this.
+const NATIVE_NAME = "agent-database-cli";
+// Launcher command names to optimize (the `bin` entries that point at the Node
+// launcher). The `-mcp` bins are intentionally excluded: the MCP server is a
+// Node program and must keep its Node shim.
+const SHIM_NAMES = ["agent-database-cli", "db-cli"];
 
 function log(message) {
   console.log(`[agent-database-cli postinstall] ${message}`);
@@ -40,7 +45,7 @@ function resolveNativeBinary() {
   const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const installRoot = join(packageRoot, "..");
   const executableName =
-    process.platform === "win32" ? `${BIN_NAME}.exe` : BIN_NAME;
+    process.platform === "win32" ? `${NATIVE_NAME}.exe` : NATIVE_NAME;
 
   const candidates = [
     join(installRoot, packageName, "bin", executableName),
@@ -77,21 +82,24 @@ function shimContents(exe) {
 function rewriteShimsIn(dir, exe) {
   let rewritten = 0;
   const templates = shimContents(exe);
-  for (const [ext, body] of Object.entries(templates)) {
-    const file = join(dir, `${BIN_NAME}${ext}`);
-    if (!existsSync(file)) continue;
-    try {
-      // Safety guard: only rewrite a file that is actually our launcher shim
-      // (npm's node shim references our package; our own rewrite references the
-      // native exe). This avoids touching anything unexpected.
-      const current = readFileSync(file, "utf8");
-      if (!current.includes(BIN_NAME)) continue;
-      if (current === body) continue; // already optimized; nothing to do
-      writeFileSync(file, body);
-      if (ext === "") chmodSync(file, 0o755);
-      rewritten += 1;
-    } catch {
-      // Leave the original shim in place on any failure.
+  for (const name of SHIM_NAMES) {
+    for (const [ext, body] of Object.entries(templates)) {
+      const file = join(dir, `${name}${ext}`);
+      if (!existsSync(file)) continue;
+      try {
+        // Safety guard: only rewrite a file that is actually our launcher shim
+        // (npm's Node shim references our package launcher; our own rewrite
+        // references the native exe). Both contain "agent-database-cli", so this
+        // avoids touching anything unexpected.
+        const current = readFileSync(file, "utf8");
+        if (!current.includes(NATIVE_NAME)) continue;
+        if (current === body) continue; // already optimized; nothing to do
+        writeFileSync(file, body);
+        if (ext === "") chmodSync(file, 0o755);
+        rewritten += 1;
+      } catch {
+        // Leave the original shim in place on any failure.
+      }
     }
   }
   return rewritten;

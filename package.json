@@ -5,7 +5,9 @@
   "type": "module",
   "bin": {
     "agent-database-cli": "bin/agent-database-cli.js",
-    "agent-database-cli-mcp": "bin/mcp.js"
+    "agent-database-cli-mcp": "bin/mcp.js",
+    "db-cli": "bin/agent-database-cli.js",
+    "db-cli-mcp": "bin/mcp.js"
   },
   "scripts": {
     "build": "cargo build --release --bin agent-database-cli",

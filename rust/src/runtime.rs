@@ -1,6 +1,10 @@
-use crate::config::{list_supported_databases, load_config, resolve_config_path};
-use crate::daemon::{client::send_daemon_request, control::start_daemon};
-use crate::types::{DaemonAction, DaemonRequest, MetadataRequest, QueryResult};
+use crate::adapters::{create_adapter, DatabaseAdapter};
+use crate::config::{
+    get_database_config, list_supported_databases, load_config, resolve_config_path,
+};
+use crate::security::assert_command_allowed;
+use crate::ssh_tunnel::{start_ssh_tunnel, StartedSshTunnel};
+use crate::types::{DatabaseConfig, MetadataRequest, QueryResult};
 use anyhow::Result;
 use serde_json::{json, Value};
 
@@ -17,33 +21,43 @@ pub async fn run_list() -> Result<Value> {
 }
 
 pub async fn run_test(db: &str) -> Result<Value> {
-    run_via_daemon(DaemonAction::Test, Some(db), None, None).await
+    let db_config = load_database_config(db)?;
+    let (mut adapter, _tunnel) = connect_adapter(&db_config).await?;
+    let result = adapter.test().await;
+    let _ = adapter.disconnect().await;
+    result?;
+    Ok(json!({ "ok": true }))
 }
 
 pub async fn run_execute(db: &str, command: &str) -> Result<QueryResult> {
-    let data = run_via_daemon(DaemonAction::Execute, Some(db), Some(command), None).await?;
-    Ok(serde_json::from_value(data)?)
+    let db_config = load_database_config(db)?;
+    // Enforce the read-only / blocklist guard before opening a connection.
+    assert_command_allowed(&db_config, command)?;
+    let (mut adapter, _tunnel) = connect_adapter(&db_config).await?;
+    let result = adapter.execute(command).await;
+    let _ = adapter.disconnect().await;
+    result
 }
 
 pub async fn run_metadata(db: &str, request: MetadataRequest) -> Result<QueryResult> {
-    let data = run_via_daemon(DaemonAction::Metadata, Some(db), None, Some(request)).await?;
-    Ok(serde_json::from_value(data)?)
+    let db_config = load_database_config(db)?;
+    let (mut adapter, _tunnel) = connect_adapter(&db_config).await?;
+    let result = adapter.metadata(request).await;
+    let _ = adapter.disconnect().await;
+    result
 }
 
-pub async fn run_reset(db: &str) -> Result<Value> {
-    run_via_daemon(DaemonAction::Reset, Some(db), None, None).await
-}
-
-/// Persistent batch mode: read one SQL statement per stdin line and execute each
-/// over the already-running daemon, emitting one JSON result per line. Because a
-/// single process serves many queries, the per-call process-spawn cost is paid
-/// once instead of per query, so each statement runs at daemon round-trip speed
-/// (sub-millisecond) rather than the ~20ms of a fresh `exec` invocation.
+/// Batch mode: read one statement per stdin line and execute each over a single
+/// connection that is opened once and reused for the whole stream, emitting one
+/// JSON result per line. Reusing one connection keeps per-statement latency at
+/// query speed instead of paying a fresh connect (and TLS/SSH handshake) per
+/// line.
 pub async fn run_repl(db: &str) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-    // Start the daemon once up front so the first line isn't slowed by a cold start.
-    start_daemon().await?;
+    let db_config = load_database_config(db)?;
+    let (mut adapter, _tunnel) = connect_adapter(&db_config).await?;
+
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut stdout = tokio::io::stdout();
     while let Some(line) = lines.next_line().await? {
@@ -51,7 +65,7 @@ pub async fn run_repl(db: &str) -> Result<()> {
         if command.is_empty() {
             continue;
         }
-        let value = match run_execute(db, command).await {
+        let value = match execute_checked(&db_config, adapter.as_mut(), command).await {
             Ok(result) => serde_json::to_value(result)?,
             Err(error) => json!({ "error": crate::utils::masking::to_error_message(&error) }),
         };
@@ -60,38 +74,44 @@ pub async fn run_repl(db: &str) -> Result<()> {
         stdout.write_all(encoded.as_bytes()).await?;
         stdout.flush().await?;
     }
+
+    let _ = adapter.disconnect().await;
     Ok(())
 }
 
-async fn run_via_daemon(
-    action: DaemonAction,
-    db: Option<&str>,
-    command: Option<&str>,
-    metadata: Option<MetadataRequest>,
-) -> Result<Value> {
-    let config_path = resolve_config_path()?.display().to_string();
-    let request = DaemonRequest {
-        action,
-        db: db.map(ToString::to_string),
-        command: command.map(ToString::to_string),
-        metadata,
-        config_path: Some(config_path),
-    };
-    // Fast path: assume the daemon is already running and send the request
-    // directly. Only when the transport fails (daemon not reachable) do we pay
-    // the cost of starting it and retrying. This avoids a redundant
-    // is_daemon_running() round-trip on every warm call.
-    let response = match send_daemon_request(&request).await {
-        Ok(response) => response,
-        Err(_) => {
-            start_daemon().await?;
-            send_daemon_request(&request).await?
+/// Load the resolved config and pull out a single database's settings (with
+/// secrets already decrypted and validated).
+fn load_database_config(db: &str) -> Result<DatabaseConfig> {
+    let config = load_config(None)?;
+    Ok(get_database_config(&config, db)?.clone())
+}
+
+/// Run the read-only / blocklist guard, then execute the command on an already
+/// connected adapter.
+async fn execute_checked(
+    db_config: &DatabaseConfig,
+    adapter: &mut dyn DatabaseAdapter,
+    command: &str,
+) -> Result<QueryResult> {
+    assert_command_allowed(db_config, command)?;
+    adapter.execute(command).await
+}
+
+/// Open a direct connection to the database, bringing up an SSH tunnel first if
+/// the connection is configured to use one. The returned tunnel must be kept
+/// alive for as long as the adapter is used; dropping it tears the tunnel down.
+async fn connect_adapter(
+    db_config: &DatabaseConfig,
+) -> Result<(Box<dyn DatabaseAdapter>, Option<StartedSshTunnel>)> {
+    let tunnel = start_ssh_tunnel(db_config).await?;
+    let mut adapter_config = db_config.clone();
+    if let Some(tunnel) = &tunnel {
+        adapter_config.url = tunnel.url.clone();
+        if tunnel.redis_cluster.is_some() {
+            adapter_config.redis_cluster = tunnel.redis_cluster.clone();
         }
-    };
-    if !response.ok {
-        anyhow::bail!(response
-            .error
-            .unwrap_or_else(|| "daemon execution failed".to_string()));
     }
-    Ok(response.data.unwrap_or_else(|| json!({})))
+    let mut adapter = create_adapter(&adapter_config)?;
+    adapter.connect().await?;
+    Ok((adapter, tunnel))
 }

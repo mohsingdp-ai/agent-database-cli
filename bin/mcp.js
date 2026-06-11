@@ -2,11 +2,10 @@
 // MCP server for agent-database-cli.
 //
 // A persistent, stateful session: it holds an "active database" context and
-// forwards each tool call to the warm local daemon over its named pipe / unix
-// socket. Because the server process stays alive across the whole MCP session,
-// there is no per-query process spawn -- each query is just the daemon round
-// trip (~1ms). Switch databases any time with `use_database`.
-import net from "node:net";
+// forwards each tool call to the native CLI binary, which opens a direct
+// connection, runs the command, and disconnects. The server process stays alive
+// across the whole MCP session and tracks the active database; switch databases
+// any time with `use_database`.
 import os from "node:os";
 import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -22,7 +21,7 @@ import {
 const CONFIG_ENV = "AGENT_DATABASE_CLI_CONFIG";
 
 // ---------------------------------------------------------------------------
-// Config path (matches the Rust daemon's resolve_config_path)
+// Config path (matches the CLI's resolve_config_path)
 // ---------------------------------------------------------------------------
 function configPath() {
   return (
@@ -57,97 +56,24 @@ function nativeBinary() {
 }
 
 // ---------------------------------------------------------------------------
-// Daemon transport
+// CLI transport
 //
-// The socket/pipe address is NOT re-derived here. `daemon start` returns the
-// authoritative address the daemon actually bound (control.rs), so we use that
-// and avoid any cross-language derivation mismatch (Node os.homedir() vs Rust
-// dirs::home_dir()).
+// Each tool call runs the native binary as a one-shot subcommand. The binary
+// prints a single JSON document to stdout on success and exits non-zero with a
+// message on stderr on failure. There is no background process or socket.
 // ---------------------------------------------------------------------------
-function transport(address, request, timeoutMs = 30000) {
-  return new Promise((resolve, reject) => {
-    const sock = net.connect(address);
-    let buf = "";
-    let settled = false;
-    const done = (fn, arg) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      sock.destroy();
-      fn(arg);
-    };
-    const timer = setTimeout(
-      () => done(reject, new Error("daemon request timed out")),
-      timeoutMs
-    );
-    sock.on("connect", () => sock.write(JSON.stringify(request) + "\n"));
-    sock.on("data", (chunk) => {
-      buf += chunk;
-      const nl = buf.indexOf("\n");
-      if (nl >= 0) {
-        try {
-          done(resolve, JSON.parse(buf.slice(0, nl)));
-        } catch (error) {
-          done(reject, error);
-        }
-      }
-    });
-    sock.on("error", (error) => done(reject, error));
-    sock.on("end", () => done(reject, new Error("daemon connection closed prematurely")));
-  });
-}
-
-// Start the daemon (idempotent) and learn the authoritative socket address it
-// bound. `daemon start` returns {"started":bool,"socket":"..."} on both the
-// already-running and just-started paths, and only returns once the daemon is
-// reachable, so its address is safe to use immediately.
-let socketAddress = null;
-function ensureDaemon() {
+function runCli(args) {
   const bin = nativeBinary();
-  if (!bin) throw new Error("agent-database-cli native binary not found; cannot start daemon");
-  const result = spawnSync(bin, ["daemon", "start"], { encoding: "utf8" });
+  if (!bin) throw new Error("agent-database-cli native binary not found");
+  const result = spawnSync(bin, args, { encoding: "utf8" });
+  if (result.error) throw result.error;
   if (result.status !== 0) {
-    throw new Error("failed to start daemon: " + (result.stderr || "").trim());
+    throw new Error(
+      (result.stderr || result.stdout || "command failed").trim()
+    );
   }
-  let parsed;
-  try {
-    parsed = JSON.parse(result.stdout);
-  } catch {
-    throw new Error("could not parse daemon start output: " + result.stdout);
-  }
-  if (!parsed.socket) throw new Error("daemon start did not return a socket address");
-  socketAddress = parsed.socket;
-  return socketAddress;
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-// Send a request; on transport failure (re)start the daemon and retry briefly.
-async function callDaemon(action, extra = {}) {
-  const request = { action, configPath: configPath(), ...extra };
-  if (!socketAddress) ensureDaemon();
-  try {
-    return unwrap(await transport(socketAddress, request));
-  } catch (first) {
-    ensureDaemon();
-    let lastError = first;
-    for (let i = 0; i < 20; i += 1) {
-      try {
-        return unwrap(await transport(socketAddress, request));
-      } catch (error) {
-        lastError = error;
-        await sleep(100);
-      }
-    }
-    throw lastError;
-  }
-}
-
-function unwrap(response) {
-  if (!response.ok) {
-    throw new Error(response.error || "daemon execution failed");
-  }
-  return response.data ?? {};
+  const out = (result.stdout || "").trim();
+  return out ? JSON.parse(out) : {};
 }
 
 function configuredDatabases() {
@@ -251,22 +177,22 @@ async function handleTool(name, args) {
           `Unknown database "${database}". Available: ${known.join(", ") || "(none)"}`
         );
       }
-      await callDaemon("test", { db: database }); // verify connection
+      runCli(["test", "--db", database]); // verify connection
       activeDatabase = database;
       return { active: activeDatabase, ok: true };
     }
     case "query": {
       const sql = args?.sql;
       if (!sql) throw new Error("missing parameter: sql");
-      return await callDaemon("execute", { db: requireActive(), command: sql });
+      return runCli(["exec", "--db", requireActive(), "--command", sql]);
     }
     case "describe": {
       const type = args?.type;
       if (!type) throw new Error("missing parameter: type");
-      return await callDaemon("metadata", {
-        db: requireActive(),
-        metadata: { type, table: args?.table, pattern: args?.pattern }
-      });
+      const cliArgs = ["meta", "--db", requireActive(), "--type", type];
+      if (args?.table) cliArgs.push("--table", args.table);
+      if (args?.pattern) cliArgs.push("--pattern", args.pattern);
+      return runCli(cliArgs);
     }
     default:
       throw new Error(`Unknown tool: ${name}`);

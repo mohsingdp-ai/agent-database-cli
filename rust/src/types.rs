@@ -43,7 +43,6 @@ pub struct DatabaseConfig {
     pub java_home: Option<String>,
     pub readonly: Option<bool>,
     pub blacklist: Option<Vec<String>>,
-    pub keep_alive_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -107,32 +106,3 @@ pub struct QueryResult {
     pub row_count: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DaemonAction {
-    Test,
-    Execute,
-    Metadata,
-    Reset,
-    Status,
-    Stop,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DaemonRequest {
-    pub action: DaemonAction,
-    pub db: Option<String>,
-    pub command: Option<String>,
-    pub metadata: Option<MetadataRequest>,
-    pub config_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DaemonResponse {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}

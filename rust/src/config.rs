@@ -63,11 +63,6 @@ fn validate_database_config(name: &str, db: &DatabaseConfig) -> Result<()> {
             }
         }
     }
-    if let Some(keep_alive) = db.keep_alive_seconds {
-        if keep_alive == 0 {
-            anyhow::bail!("database config {name}: keepAliveSeconds must be a positive integer");
-        }
-    }
     if let Some(driver) = &db.oracle_driver {
         if db.db_type != DatabaseType::Oracle {
             anyhow::bail!(

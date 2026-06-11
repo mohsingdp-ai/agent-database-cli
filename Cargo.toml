@@ -3,7 +3,7 @@ name = "agent-database-cli"
 version = "0.2.22"
 edition = "2021"
 license = "MIT"
-description = "Unified database CLI with read-only mode, command blocklist, and a local connection daemon."
+description = "Unified database CLI with read-only mode and a command blocklist; each command opens a direct connection."
 
 [dependencies]
 anyhow = "1.0"

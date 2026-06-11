@@ -1,6 +1,6 @@
 ---
 name: agent-database-cli
-description: Use the local agent-database-cli to safely operate configured databases. Suitable for listing database connections, testing connections, executing SQL/Redis/MongoDB commands, querying metadata for tables/columns/collections/keys, managing the local connection daemon, and verifying read-only mode and the command blacklist.
+description: Use the local agent-database-cli to safely operate configured databases. Suitable for listing database connections, testing connections, executing SQL/Redis/MongoDB commands, querying metadata for tables/columns/collections/keys, and verifying read-only mode and the command blacklist.
 ---
 
 # agent-database-cli Usage Guide
@@ -14,9 +14,7 @@ What it can do:
 - Execute SQL, Redis commands, or MongoDB JSON commands
 - Query metadata such as tables, columns, collections, and Redis keys
 - Enforce a command blacklist and read-only mode per individual database configuration
-- Normal commands automatically start the local daemon on demand; the daemon exits automatically after `300` seconds of idle time by default
-- Keep connections alive for a short time through the local daemon; an individual database connection is released after `180` seconds of idle time by default
-- The daemon uses a named pipe on Windows and a Unix socket on macOS/Linux
+- Open a direct connection per command, run it, and disconnect; use `repl` to reuse one connection across many statements
 - Prebuilt binaries support macOS x64/arm64, Linux x64/arm64, and Windows x64
 - Oracle uses SQLcl by default; when `oracleDriver: "oracle"` or `"oracledb"` is explicitly configured, the native Oracle driver is used
 
@@ -91,8 +89,7 @@ The configuration file is a JSON object whose root field is `databases`:
       "type": "mysql",
       "url": "mysql://user:password@localhost:3306/app",
       "readonly": true,
-      "blacklist": ["drop", "truncate", "delete"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate", "delete"]
     }
   }
 }
@@ -106,7 +103,6 @@ Fields:
 - `database`: default MongoDB database name, optional
 - `readonly`: whether to enable read-only mode
 - `blacklist`: command blacklist array, case-insensitive
-- `keepAliveSeconds`: number of seconds before an idle daemon connection is released, default `180`
 - `oracleDriver`: Oracle driver, either `oracledb` or `sqlcl`
 - `sqlclPath`: path to the SQLcl executable
 - `javaHome`: the `JAVA_HOME` used by SQLcl
@@ -202,32 +198,6 @@ Return values:
 - On success, outputs the query result to stdout
 - A metadata type not supported by the current database fails and returns an error
 
-## daemon
-
-Manage the local connection daemon. The normal `test`, `exec`, `meta`, and `reset` commands start the daemon automatically when it is not running, and reuse it directly when it is, without starting it again. The daemon uses a Unix socket, does not expose a network port, and exits automatically after `300` seconds of idle time by default.
-
-```bash
-agent-database-cli daemon start
-agent-database-cli daemon status
-agent-database-cli daemon stop
-```
-
-Return values:
-
-- `start` outputs the socket path on success
-- `status` outputs the current list of connections on success
-- `stop` outputs the stop result on success
-
-## reset
-
-Reset a specified database connection.
-
-```bash
-agent-database-cli reset --db "<databaseName>"
-```
-
-If the daemon is running, it disconnects and cleans up that database connection; the next command reconnects.
-
 ## Oracle SQLcl
 
 When Oracle `oracledb` Thin mode does not support the target database version, you can switch to SQLcl.
@@ -250,7 +220,7 @@ SQLcl mode passes the connection script via stdin to avoid the password appearin
 
 - Fails when the configuration file JSON is invalid
 - Fails when `databases` is missing or the database configuration name does not exist
-- Fails on an unknown `type`, an unknown `oracleDriver`, or an invalid `keepAliveSeconds`
+- Fails on an unknown `type` or an unknown `oracleDriver`
 - `exec` fails when `--db` or `--command` is missing
 - `meta columns` fails when `--table` is missing
 - Fails on a blacklist match, with an error indicating the command was rejected by the blacklist

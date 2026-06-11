@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Breaking: removed the local connection daemon. Every command now opens a direct connection, runs, and disconnects. Removed the `daemon` subcommand, the `reset` subcommand (it only dropped a pooled connection), and the now-unused `keepAliveSeconds` config field (existing configs that still set it are ignored). The `repl` subcommand keeps its speed by reusing a single connection for the whole stdin stream, and the MCP server now invokes the CLI binary directly instead of talking to a daemon socket.
+- Bugfix: PostgreSQL results now serialize `numeric` (as a precision-preserving string), `date`/`time`/`timestamp`/`timestamptz`, `uuid`, `json`/`jsonb`, `int2`/`float4`, and enum / user-defined text types. These previously came back as the literal string `<unsupported>`.
+- Bugfix: error messages now include the full driver error chain, so a failed query reports the real database message (e.g. `db error: ERROR: column "x" does not exist`) instead of just `db error`.
+
 ## 0.2.22
 
 - New feature: added an MCP server (`agent-database-cli-mcp`, stdio-based). It runs as a persistent, stateful session: set the active database context with `use_database`, then run `query` / `describe` against the current context, with each tool call going straight to the resident daemon's named pipe (~1-2ms, no per-call process spawn). It exposes the `list_databases`, `use_database`, `query`, `describe`, and `current_context` tools, and auto-starts the daemon if it isn't running. Best suited for agents that query continuously and switch databases on the fly.

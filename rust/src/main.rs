@@ -1,6 +1,5 @@
 mod adapters;
 mod config;
-mod daemon;
 mod output;
 mod runtime;
 mod secrets;
@@ -24,10 +23,11 @@ use types::{MetadataRequest, MetadataType, OutputFormat};
     about = "Unified database command-line tool",
     long_about = "Unified database CLI for MySQL, PostgreSQL, Redis, Oracle, and MongoDB.\n\n\
 Connections are defined in ~/.agent-database-cli/config.json (override the path \
-with the AGENT_DATABASE_CLI_CONFIG env var); run `list` to see them. Commands run \
-through a local daemon that keeps connections warm and is started automatically.\n\n\
-For many queries, stream statements into `repl`, or run the `agent-database-cli-mcp` \
-MCP server for a persistent session. Connections are read-only by default."
+with the AGENT_DATABASE_CLI_CONFIG env var); run `list` to see them. Each command \
+opens a direct connection, runs, and disconnects.\n\n\
+For many queries, stream statements into `repl` (one reused connection), or run the \
+`agent-database-cli-mcp` MCP server for a persistent session. Connections are \
+read-only by default."
 )]
 struct Cli {
     #[arg(long, default_value = "json", value_parser = ["json", "table"], help = "Output format")]
@@ -60,7 +60,7 @@ enum Commands {
     },
     #[command(
         name = "repl",
-        about = "Read SQL from stdin (one statement per line), execute each over the warm daemon, and print one JSON result per line. Lowest per-query latency for many queries."
+        about = "Read SQL from stdin (one statement per line), execute each over a single reused connection, and print one JSON result per line. Lowest per-query latency for many queries."
     )]
     Repl {
         #[arg(long, help = "Configured connection name (see `list`)")]
@@ -84,18 +84,6 @@ enum Commands {
         #[arg(long, help = "Match pattern; used by --type keys (Redis SCAN)")]
         pattern: Option<String>,
     },
-    #[command(
-        about = "Drop the pooled connection for a database, forcing a fresh connect next time"
-    )]
-    Reset {
-        #[arg(long, help = "Configured connection name (see `list`)")]
-        db: String,
-    },
-    #[command(about = "Manage the local connection daemon")]
-    Daemon {
-        #[command(subcommand)]
-        command: DaemonCommands,
-    },
     #[command(name = "install-skill", about = "Install or update the Agent skill")]
     InstallSkill(InstallSkillArgs),
 }
@@ -106,18 +94,6 @@ struct InstallSkillArgs {
     dry_run: bool,
     #[arg(long, help = "Skip the interactive confirmation and install directly")]
     yes: bool,
-}
-
-#[derive(Subcommand)]
-enum DaemonCommands {
-    #[command(about = "Start the daemon")]
-    Start,
-    #[command(about = "Stop the daemon")]
-    Stop,
-    #[command(about = "Show daemon status")]
-    Status,
-    #[command(hide = true)]
-    Run,
 }
 
 #[tokio::main]
@@ -155,16 +131,6 @@ async fn run() -> Result<()> {
             };
             serde_json::to_value(runtime::run_metadata(&db, request).await?)?
         }
-        Commands::Reset { db } => runtime::run_reset(&db).await?,
-        Commands::Daemon { command } => match command {
-            DaemonCommands::Start => daemon::control::start_daemon().await?,
-            DaemonCommands::Stop => daemon::control::stop_daemon().await?,
-            DaemonCommands::Status => daemon::control::daemon_status().await?,
-            DaemonCommands::Run => {
-                daemon::server::run_server().await?;
-                serde_json::json!({ "stopped": true })
-            }
-        },
         Commands::InstallSkill(args) => install_skill(args)?,
     };
     output::write_output(&data, format)?;

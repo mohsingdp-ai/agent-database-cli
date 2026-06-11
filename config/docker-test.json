@@ -4,37 +4,32 @@
       "type": "mysql",
       "url": "mysql://test:test@127.0.0.1:3306/app",
       "readonly": false,
-      "blacklist": ["drop", "truncate"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate"]
     },
     "local-postgres": {
       "type": "postgres",
       "url": "postgres://test:test@127.0.0.1:5432/app",
       "readonly": false,
-      "blacklist": ["drop", "truncate"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate"]
     },
     "local-redis": {
       "type": "redis",
       "url": "redis://127.0.0.1:6379",
       "readonly": false,
-      "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "blacklist": ["flushall", "flushdb"]
     },
     "local-mongodb": {
       "type": "mongodb",
       "url": "mongodb://test:test@127.0.0.1:27017/app?authSource=admin",
       "database": "app",
       "readonly": false,
-      "blacklist": ["drop", "dropDatabase", "deleteMany"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "dropDatabase", "deleteMany"]
     },
     "local-oracle": {
       "type": "oracle",
       "url": "oracle://test:test@127.0.0.1:1521/FREEPDB1",
       "readonly": false,
-      "blacklist": ["drop", "truncate"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate"]
     }
   }
 }

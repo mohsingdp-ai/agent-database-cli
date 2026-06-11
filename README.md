@@ -4,7 +4,7 @@
 
 A CLI-based multi-database tool that packages common database connection, query, metadata inspection, and connection reuse capabilities as local commands callable by agents.
 
-MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command blocklist · SQLcl Oracle · Local daemon
+MySQL · PostgreSQL · Redis · Oracle · MongoDB · Read-only mode · Command blocklist · SQLcl Oracle · Direct connections
 
 <p>
   <img src="https://img.shields.io/badge/CLI-agent--database--cli-2ea44f" alt="CLI agent-database-cli">
@@ -29,22 +29,20 @@ What it can do:
 - Execute SQL, Redis commands, or MongoDB JSON commands against a specified database
 - Query database metadata such as tables, columns, collections, and Redis keys. Redis keys metadata uses cursor-based `SCAN` instead of blocking `KEYS`
 - Enable read-only mode and command blocklists per database configuration
-- Auto-start the local daemon on demand; the daemon exits after `300` idle seconds by default
-- Keep connections alive through the local daemon; each database connection is released after `180` idle seconds by default
+- Open a direct connection per command, run it, and disconnect; use `repl` to reuse one connection across many statements
 - Oracle uses SQLcl by default; native `oracle`/`oracledb` drivers can be selected explicitly when Oracle Instant Client is available
 - Never store or print unmasked passwords, tokens, or secrets
-- Use named pipes on Windows and Unix sockets on macOS/Linux for the daemon
 
 Driver configuration table:
 
 | Database | `type` | Default driver | Driver switch configuration | Common configuration |
 | --- | --- | --- | --- | --- |
-| MySQL | `mysql` | Native Rust driver `mysql_async` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
-| PostgreSQL | `postgres` | Native Rust driver `tokio-postgres` | Not switchable yet | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Redis standalone | `redis` | Native Rust driver `redis` | Configure `url` only | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Redis cluster | `redis` | Native Rust driver `redis` | Configure both `url` and `redisCluster.nodes` | `readonly`, `blacklist`, `keepAliveSeconds` |
-| Oracle | `oracle` | SQLcl | `oracleDriver: "sqlcl" \| "oracle" \| "oracledb"`; defaults to SQLcl when omitted. Native drivers require Oracle Instant Client | `readonly`, `blacklist`, `keepAliveSeconds` |
-| MongoDB | `mongodb` | Native Rust driver `mongodb` | Not switchable yet; `database` can be configured as the default database | `readonly`, `blacklist`, `keepAliveSeconds` |
+| MySQL | `mysql` | Native Rust driver `mysql_async` | Not switchable yet | `readonly`, `blacklist` |
+| PostgreSQL | `postgres` | Native Rust driver `tokio-postgres` | Not switchable yet | `readonly`, `blacklist` |
+| Redis standalone | `redis` | Native Rust driver `redis` | Configure `url` only | `readonly`, `blacklist` |
+| Redis cluster | `redis` | Native Rust driver `redis` | Configure both `url` and `redisCluster.nodes` | `readonly`, `blacklist` |
+| Oracle | `oracle` | SQLcl | `oracleDriver: "sqlcl" \| "oracle" \| "oracledb"`; defaults to SQLcl when omitted. Native drivers require Oracle Instant Client | `readonly`, `blacklist` |
+| MongoDB | `mongodb` | Native Rust driver `mongodb` | Not switchable yet; `database` can be configured as the default database | `readonly`, `blacklist` |
 
 ## Installation
 
@@ -112,25 +110,25 @@ agent-database-cli meta --db local-mysql --type tables    # tables/columns/colle
 agent-database-cli --format table exec --db local-mysql --command "select 1"  # table output
 ```
 
-The first command that needs the daemon auto-starts a local connection daemon (which reuses DB connections and exits when idle).
+Each command opens a direct connection to the database, runs, and disconnects.
 
-### High-frequency queries (sub-millisecond)
+### High-frequency queries
 
-A one-off command spawns a fresh process each time (~19ms). For many queries in a row, let one persistent process serve them all:
+A one-off command spawns a fresh process and a fresh connection each time. For many queries in a row, let one persistent process and connection serve them all:
 
-- **`repl`**: reads one SQL statement per stdin line, reusing the same process and daemon connection, emitting one JSON result per line (~0.6ms each).
+- **`repl`**: reads one SQL statement per stdin line, reusing the same process and a single connection, emitting one JSON result per line.
 
   ```bash
   printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db local-mysql
   ```
 
-- **MCP server** (`agent-database-cli-mcp`): a persistent stateful session, ideal for agents. `use_database` sets the active database context; `query` / `describe` run against it (~1.7ms per call); switch databases any time. Register it once in your MCP client, e.g.:
+- **MCP server** (`agent-database-cli-mcp`): a persistent stateful session, ideal for agents. `use_database` sets the active database context; `query` / `describe` run against it; switch databases any time. Register it once in your MCP client, e.g.:
 
   ```bash
   claude mcp add agent-db -- agent-database-cli-mcp
   ```
 
-  Tools: `list_databases`, `use_database`, `query`, `describe`, `current_context`; auto-starts the daemon if it is not running.
+  Tools: `list_databases`, `use_database`, `query`, `describe`, `current_context`; each call invokes the CLI binary directly.
 
 See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for the rationale and measured numbers.
 
@@ -157,7 +155,6 @@ The configuration file is an object. Each key under `databases` is a database co
 - `database`: Optional default MongoDB database name
 - `readonly`: Whether read-only mode is enabled, default `true`; only explicitly set `false` when write access is really required
 - `blacklist`: Command blocklist array, case-insensitive
-- `keepAliveSeconds`: Idle release timeout in seconds for a single database connection, default `180`
 - `oracleDriver`: Oracle driver, supports `sqlcl`, `oracle`, or `oracledb`; defaults to `sqlcl` when omitted
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
 - `javaHome`: Optional `JAVA_HOME` used by SQLcl
@@ -207,8 +204,7 @@ Reference configuration:
       "type": "mysql",
       "url": "mysql://user:password@localhost:3306/app",
       "readonly": true,
-      "blacklist": ["drop", "truncate", "delete"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate", "delete"]
     },
     "remote-mysql": {
       "type": "mysql",
@@ -220,15 +216,13 @@ Reference configuration:
         "privateKeyPath": "~/.ssh/id_rsa",
         "passphrase": "key-passphrase"
       },
-      "readonly": true,
-      "keepAliveSeconds": 180
+      "readonly": true
     },
     "redis-standalone": {
       "type": "redis",
       "url": "redis://localhost:6379",
       "readonly": false,
-      "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "blacklist": ["flushall", "flushdb"]
     },
     "redis-cluster": {
       "type": "redis",
@@ -241,8 +235,7 @@ Reference configuration:
         ]
       },
       "readonly": true,
-      "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "blacklist": ["flushall", "flushdb"]
     },
     "redis-cluster-via-ssh": {
       "type": "redis",
@@ -261,8 +254,7 @@ Reference configuration:
         "privateKeyPath": "~/.ssh/id_rsa"
       },
       "readonly": true,
-      "blacklist": ["flushall", "flushdb"],
-      "keepAliveSeconds": 180
+      "blacklist": ["flushall", "flushdb"]
     },
     "oracle-test": {
       "type": "oracle",
@@ -271,8 +263,7 @@ Reference configuration:
       "sqlclPath": "/opt/homebrew/Caskroom/sqlcl/26.1.0.086.1709/sqlcl/bin/sql",
       "javaHome": "/Applications/IntelliJ IDEA Ultimate.app/Contents/jbr/Contents/Home",
       "readonly": true,
-      "blacklist": ["drop", "truncate", "delete", "update", "insert", "merge", "alter", "create"],
-      "keepAliveSeconds": 180
+      "blacklist": ["drop", "truncate", "delete", "update", "insert", "merge", "alter", "create"]
     }
   }
 }
@@ -334,8 +325,7 @@ Recommended for production databases:
   "type": "mysql",
   "url": "mysql://user:password@prod-db:3306/app",
   "readonly": true,
-  "blacklist": ["drop", "truncate", "delete", "update", "insert", "alter", "create"],
-  "keepAliveSeconds": 180
+  "blacklist": ["drop", "truncate", "delete", "update", "insert", "alter", "create"]
 }
 ```
 
@@ -346,8 +336,7 @@ Recommended for a dedicated writable connection:
   "type": "postgres",
   "url": "postgres://user:password@write-db:5432/app",
   "readonly": false,
-  "blacklist": ["drop", "truncate", "alter"],
-  "keepAliveSeconds": 180
+  "blacklist": ["drop", "truncate", "alter"]
 }
 ```
 
@@ -395,7 +384,7 @@ A Rust CLI scaffold has been added. The current binary is `agent-database-cli`:
 ```bash
 npm run build:rust
 npm run dev:rust -- list
-npm run dev:rust -- daemon status
+npm run dev:rust -- test --db local-mysql
 ```
 
 Oracle keeps two first-class drivers: omitting `oracleDriver` uses SQLcl; native `oracle`/`oracledb` drivers remain available when Oracle Instant Client is installed. The default entry is now the native Rust CLI. Windows, Linux and macOS binaries are distributed through npm platform subpackages. Oracle defaults to SQLcl; native Oracle drivers must be selected explicitly.

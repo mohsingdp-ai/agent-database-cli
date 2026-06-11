@@ -1,15 +1,19 @@
 # Benchmark + correctness gate for the agent-database-cli launch path.
-# Measures WARM per-call latency (daemon already running, so no cold-spawn hang)
-# and verifies list/exec/meta still return correct output through the given binary.
+#
+# Each command opens a direct connection (there is no daemon), so this measures:
+#   * exec  -- one-off latency: process spawn + fresh DB connection + query
+#   * repl  -- marginal per-statement latency over a single reused connection
+#     (isolated from the one-time setup by comparing two batch sizes)
+# It also verifies list/exec/meta still return correct output through the binary.
 #
 # Usage:
-#   pwsh scripts/bench-launch.ps1 -Bin <path-to-exe-or-js-launcher> [-Db <name>] [-Iter 12]
+#   pwsh scripts/bench-launch.ps1 -Bin <path-to-exe-or-js-launcher> [-Conn <name>] [-Iter 20]
 #
 # -Bin may be a native .exe or "node <path>/agent-database-cli.js" style launcher.
 param(
   [Parameter(Mandatory = $true)][string]$Bin,
   [string]$Conn = "minted-edge-samad",
-  [int]$Iter = 12
+  [int]$Iter = 20
 )
 
 # Resolve invocation: allow "node path/to.js" by splitting on first space.
@@ -24,8 +28,8 @@ function Invoke-Cli {
 
 Write-Host "== binary: $Bin =="
 
-# Warm up: ensure daemon + connection are live so we measure steady-state latency.
-Invoke-Cli @("test", "--db", $Conn) | Out-Null
+# Warm up the OS file cache and the DB so the first sample isn't an outlier.
+Invoke-Cli @("exec", "--db", $Conn, "--command", "select 1") | Out-Null
 
 # --- Correctness gate ---
 $ok = $true
@@ -37,7 +41,7 @@ $meta = (Invoke-Cli @("meta", "--db", $Conn, "--type", "tables")) -join "`n"
 if ($meta -notmatch '"rows"') { Write-Host "FAIL: meta returned no rows array"; $ok = $false }
 Write-Host ("correctness: {0}" -f ($(if ($ok) { "PASS" } else { "FAIL" })))
 
-# --- Warm latency ---
+# --- exec one-off latency (full process + fresh connection each call) ---
 $samples = @()
 for ($i = 0; $i -lt $Iter; $i++) {
   $t = Measure-Command { Invoke-Cli @("exec", "--db", $Conn, "--command", "select 1") | Out-Null }
@@ -45,6 +49,26 @@ for ($i = 0; $i -lt $Iter; $i++) {
 }
 $sorted = $samples | Sort-Object
 $median = $sorted[[int]([math]::Floor($sorted.Count / 2))]
-Write-Host ("warm exec ms  min={0} median={1} max={2}  (n={3})" -f $sorted[0], $median, $sorted[-1], $Iter)
-Write-Host ("samples: {0}" -f ($samples -join ", "))
+Write-Host ("exec one-off ms  min={0} median={1} max={2}  (n={3})" -f $sorted[0], $median, $sorted[-1], $Iter)
+
+# --- repl marginal per-statement latency ---
+# Compare two batch sizes so the one-time setup (spawn + connect) cancels out:
+#   marginal = (total_large - total_small) / (n_large - n_small)
+function Repl-Total([int]$n) {
+  $lines = (1..$n | ForEach-Object { "select 1" }) -join "`n"
+  $best = [double]::MaxValue
+  for ($r = 0; $r -lt 3; $r++) {
+    $t = (Measure-Command { $lines | Invoke-Cli @("repl", "--db", $Conn) | Out-Null }).TotalMilliseconds
+    if ($t -lt $best) { $best = $t }
+  }
+  return $best
+}
+$small = 50
+$large = 250
+$tSmall = Repl-Total $small
+$tLarge = Repl-Total $large
+$marginal = [math]::Round(($tLarge - $tSmall) / ($large - $small), 2)
+$setup = [math]::Round($tSmall - $small * $marginal)
+Write-Host ("repl setup ms ~={0}  marginal/stmt ms ~={1}  (n={2} vs {3})" -f $setup, $marginal, $small, $large)
+
 if (-not $ok) { exit 1 }

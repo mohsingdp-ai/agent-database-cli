@@ -1,5 +1,12 @@
 # CLI Launch Latency: Before / After
 
+> **Historical (superseded).** This analysis predates the removal of the local
+> connection daemon. The CLI no longer runs a daemon or a connection pool — each
+> command now opens a direct connection, runs, and disconnects (`run_via_daemon`
+> and `rust/src/daemon/` no longer exist). The diagrams and numbers below describe
+> the daemon-era launch path and are kept only for historical context. For the
+> current model and fresh measurements, see `docs/PERFORMANCE.md`.
+
 **Type:** Refactoring (Before/After) Flow Diagram
 **Last Updated:** 2026-06-01
 **Related Files:**

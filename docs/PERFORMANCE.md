@@ -1,44 +1,45 @@
 # Performance
 
-`agent-database-cli` is optimized at several layers for the high-frequency query workloads typical of agents. This document explains the measured latency of each command, the principles behind the optimizations, and how to get the lowest latency in your own setup.
+`agent-database-cli` opens a **direct connection per command**: each invocation spawns the process, connects to the database, runs the statement, and disconnects. There is no background daemon and no connection pool. This document explains where the time goes and how to get the lowest latency for high-frequency (agent) workloads.
 
-## Measured latency (Windows, local Postgres, hot path)
+## Measured latency (Windows, local Postgres over TLS, `passwordRef` credential)
 
-| Approach | Per query | Notes |
+Numbers are environment-specific — they depend on your OS, where the database lives, and whether the connection uses TLS / an SSH tunnel. Measure your own setup with `scripts/bench-launch.ps1`.
+
+| Approach | Latency | What it pays for |
 | --- | --- | --- |
-| Early (Node shim + old binary) | ~119 ms | Pre-optimization baseline |
-| `exec` (new process each time) | ~19 ms | One-off command; the floor is the OS process-creation cost |
-| `repl` (resident process reading stdin) | **~0.6 ms** | Process starts once, executes line by line |
-| MCP (`agent-database-cli-mcp`) | **~1.7 ms** | Persistent session + active database context |
-| Raw daemon round trip (no process startup) | ~0.86 ms | Named pipe + connection-pool query |
+| `list` (no DB connection) | ~28 ms | Process spawn + config load only |
+| `exec` (one-off command) | ~165 ms | Spawn **+ a fresh DB connection** + query + disconnect |
+| `repl` — fixed setup | ~220 ms once | Spawn + the one connection it reuses |
+| `repl` — per statement after setup | **~0.3 ms** | Just the query over the warm connection |
 
-## Core principle: move fixed costs off the "per query" path
+The headline: for a **single** command, connection establishment (TCP + TLS + auth, plus decrypting the stored credential) dominates — roughly **130 ms** of the ~165 ms `exec` total, versus only ~28 ms for process spawn. Reusing one connection (`repl`) amortizes that fixed cost to near zero per query.
+
+## Core principle: reuse the connection for high-frequency work
 
 ```
-Slow: start heavy process ──► rebuild DB connection ──► recompute every time ──► run query
-Fast: [resident client] ──► [reused connection pool] ──► [cached computation] ──► run query
-      (startup paid once)    (connection paid once)    (compiled once)
+One-off (exec / MCP call): spawn ─► connect (TCP/TLS/auth) ─► query ─► disconnect
+                                    └──────── dominant ───────┘   (paid every call)
+
+Batch (repl):              spawn ─► connect ─► query ─► query ─► query ─► ...
+                                    (paid once)        └─ ~0.3 ms each ─┘
 ```
 
-In order of impact, largest to smallest:
+The single biggest lever is **how many times you establish a connection**. A one-off `exec` (or a single MCP `query`) pays a full connect every time. Feeding many statements through one `repl` process pays it once.
 
-1. **Don't spawn a new process for every query.** A one-off shell command pays the OS process-creation cost every time (about 5-15 ms on Windows, unavoidable). To go faster, let a **single resident process** serve many queries: `repl` or the MCP server.
-2. **A resident daemon reuses expensive state.** Establishing a database connection (TCP / authentication / SSH tunnel) is costly; the local daemon keeps connections resident, so a single query carries no reconnection cost.
-3. **Cache computations that repeat on every request.** The key optimization: the safety check for read-only SQL previously **recompiled the regex every time** for about 16 write keywords, so a single exec spent about 28 ms on regex compilation alone. With process-level caching, a daemon round trip dropped from about 28.5 ms to about 0.86 ms.
-4. **Move heavy runtimes / large footprints off the hot path.** The Node launcher cost about 145 ms just to forward; it has been changed to call the native binary directly via `postinstall`.
-5. **Reduce round trips.** Removing the `is_daemon_running` probe before each command (two round trips → one) lowered the native hot path from about 99 ms to about 50 ms.
-6. **Background processes must not block the caller.** The daemon detaches from the caller at startup (Windows clears standard-handle inheritance; Unix `setsid`), avoiding a pipe read hanging on cold start.
+Secondary, already-applied optimizations on the per-command path:
 
-> The order is always "measure first, then decompose." This project's biggest cost (regex compilation) was completely invisible before measurement, while the IPC itself is only 0.37 ms.
+1. **Native launcher.** During install, `postinstall` rewrites the launcher shim to call the platform's native binary directly instead of going through Node, keeping process spawn around tens of milliseconds rather than ~145 ms. `bin/agent-database-cli.js` remains as a fallback (e.g. `--ignore-scripts`).
+2. **Cached safety-check regexes.** The read-only / blocklist check compiles its keyword regexes once per process instead of on every command (previously ~28 ms of regex compilation per `exec`). This is now a negligible part of the query path.
 
 ## How to go fastest
 
-- **One-off query**: `agent-database-cli exec --db <name> --command "<sql>"` (about 19 ms).
-- **Many queries in a row (scripts / pipelines)**: use `repl` and feed multiple SQL statements to a single process:
+- **One-off query**: `agent-database-cli exec --db <name> --command "<sql>"`. Simplest; pays a fresh connection each call (~165 ms here, mostly connection setup).
+- **Many queries in a row (scripts / pipelines)**: use `repl` and feed multiple statements to a single process so the connection is established once:
   ```bash
   printf 'select 1\nselect count(*) from accounts\n' | agent-database-cli repl --db <name>
   ```
-  About 0.6 ms each.
-- **Agent that queries continuously and switches databases on the fly**: use the MCP server `agent-database-cli-mcp`. `use_database` sets the active context, `query` / `describe` run against the current database, each call takes about 1.7 ms, and there is no per-call process spawn.
+  ~0.3 ms per statement after the one-time setup.
+- **Agent that queries continuously**: the MCP server (`agent-database-cli-mcp`) keeps the **session context** (active database via `use_database`) alive, but each `query` / `describe` invokes the CLI binary directly, so it pays a fresh connection per call like `exec`. For tight query loops where latency matters, prefer `repl`.
 
-`repl` and MCP are two **parallel** clients of the daemon: MCP does not call `repl`; each independently reaches sub-millisecond latency by reusing a "resident process + warm daemon."
+> Always measure before optimizing. On this project the connection cost — invisible until measured — is now the dominant term for one-off commands; without the daemon it is paid per call rather than amortized across a warm pool. Choose `repl` when that matters.

@@ -124,7 +124,7 @@ fn assert_not_blacklisted(config: &DatabaseConfig, normalized: &str, head: &str)
 // Compiling a regex per keyword on every command was the dominant cost of an
 // exec request: a read-only SELECT checks ~16 SQL write keywords, recompiling
 // ~16 regexes (~1-2ms each) every call. Cache compiled regexes by keyword so
-// each is built once for the daemon's lifetime. Regex clones are cheap (Arc).
+// each is built once per process. Regex clones are cheap (Arc).
 static KEYWORD_REGEX_CACHE: Lazy<Mutex<HashMap<String, Regex>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 

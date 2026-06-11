@@ -21,10 +21,16 @@ use types::{MetadataRequest, MetadataType, OutputFormat};
 #[command(
     name = "agent-database-cli",
     version,
-    about = "Unified database command-line tool"
+    about = "Unified database command-line tool",
+    long_about = "Unified database CLI for MySQL, PostgreSQL, Redis, Oracle, and MongoDB.\n\n\
+Connections are defined in ~/.agent-database-cli/config.json (override the path \
+with the AGENT_DATABASE_CLI_CONFIG env var); run `list` to see them. Commands run \
+through a local daemon that keeps connections warm and is started automatically.\n\n\
+For many queries, stream statements into `repl`, or run the `agent-database-cli-mcp` \
+MCP server for a persistent session. Connections are read-only by default."
 )]
 struct Cli {
-    #[arg(long, default_value = "json", value_parser = ["json", "table"])]
+    #[arg(long, default_value = "json", value_parser = ["json", "table"], help = "Output format")]
     format: String,
     #[command(subcommand)]
     command: Commands,
@@ -32,45 +38,57 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    #[command(about = "Show supported database types")]
+    #[command(about = "List supported database types and configured connections")]
     List,
-    #[command(about = "Test database connection")]
+    #[command(about = "Test a configured database connection")]
     Test {
-        #[arg(long)]
+        #[arg(long, help = "Configured connection name (see `list`)")]
         db: String,
     },
     #[command(
         name = "exec",
-        about = "Execute SQL, Redis commands, or MongoDB JSON commands"
+        about = "Execute a SQL query, Redis command, or MongoDB JSON command"
     )]
     Execute {
-        #[arg(long)]
+        #[arg(long, help = "Configured connection name (see `list`)")]
         db: String,
-        #[arg(long)]
+        #[arg(
+            long,
+            help = "Statement to run: SQL, a Redis command, or a MongoDB JSON command"
+        )]
         command: String,
     },
     #[command(
         name = "repl",
-        about = "Continuously read SQL from stdin (one per line), reuse the daemon connection for low-latency batch execution, and output JSON line by line"
+        about = "Read SQL from stdin (one statement per line), execute each over the warm daemon, and print one JSON result per line. Lowest per-query latency for many queries."
     )]
     Repl {
-        #[arg(long)]
+        #[arg(long, help = "Configured connection name (see `list`)")]
         db: String,
     },
-    #[command(name = "meta", about = "Query database metadata")]
+    #[command(
+        name = "meta",
+        about = "Query database metadata: tables, columns, collections, or Redis keys"
+    )]
     Metadata {
-        #[arg(long)]
+        #[arg(long, help = "Configured connection name (see `list`)")]
         db: String,
-        #[arg(long = "type", value_parser = ["tables", "columns", "collections", "keys"])]
+        #[arg(
+            long = "type",
+            value_parser = ["tables", "columns", "collections", "keys"],
+            help = "What to inspect: tables (SQL) | columns (SQL, requires --table) | collections (MongoDB) | keys (Redis, optional --pattern)"
+        )]
         metadata_type: String,
-        #[arg(long)]
+        #[arg(long, help = "Table name; required when --type is columns")]
         table: Option<String>,
-        #[arg(long)]
+        #[arg(long, help = "Match pattern; used by --type keys (Redis SCAN)")]
         pattern: Option<String>,
     },
-    #[command(about = "Reset the specified database connection")]
+    #[command(
+        about = "Drop the pooled connection for a database, forcing a fresh connect next time"
+    )]
     Reset {
-        #[arg(long)]
+        #[arg(long, help = "Configured connection name (see `list`)")]
         db: String,
     },
     #[command(about = "Manage the local connection daemon")]

@@ -19,5 +19,9 @@ pub fn mask_secret(value: &str) -> String {
 }
 
 pub fn to_error_message(error: &Error) -> String {
-    mask_secret(&error.to_string())
+    // Use the alternate format so the full source chain is included. Drivers
+    // like tokio-postgres display only a generic top-level message ("db error")
+    // and carry the real server message (e.g. `column "x" does not exist`) in a
+    // nested source; `{:#}` joins the whole chain with ": ".
+    mask_secret(&format!("{:#}", error))
 }

@@ -64,10 +64,12 @@ dependencies = [
  "regex",
  "russh",
  "russh-keys",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha1",
  "shell-words",
+ "time",
  "tokio",
  "tokio-postgres",
  "url",
@@ -2601,6 +2603,10 @@ dependencies = [
  "bytes",
  "fallible-iterator",
  "postgres-protocol",
+ "serde_core",
+ "serde_json",
+ "time",
+ "uuid",
 ]
 
 [[package]]
@@ -3089,6 +3095,7 @@ dependencies = [
  "borsh",
  "bytes",
  "num-traits",
+ "postgres-types",
  "rand 0.8.6",
  "rkyv",
  "serde",

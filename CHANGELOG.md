@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- Distribution: binaries now ship via **GitHub Releases**, and npm publishes a single launcher package (`@mejazbese21/agent-database-cli`) instead of per-platform npm sub-packages. On install, `postinstall` downloads the binary for your OS/arch from the release matching the package version into `bin/native/`. Requires network access at install time; `--ignore-scripts` installs need the binary built (`cargo build --release`) or placed manually. You can also just download the raw binary for your platform from the Releases page and run it — no npm needed.
+- CI: `release.yml` builds all 5 targets and attaches raw binaries to the GitHub Release (uses the built-in `GITHUB_TOKEN`, no npm secret). `publish.yml` is now manual-dispatch only and publishes just the launcher package.
+
 ## 1.1.1
 
 - Docs: trimmed the README to a short, scannable version (install, usage, config, permissions, MCP). No code changes.

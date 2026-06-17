@@ -1,6 +1,6 @@
 {
   "name": "@mejazbese21/agent-database-cli",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Unified database CLI with read-only mode and a command blocklist; each command opens a direct connection.",
   "type": "module",
   "bin": {
@@ -19,7 +19,9 @@
     "postinstall": "node bin/postinstall.js"
   },
   "files": [
-    "bin",
+    "bin/agent-database-cli.js",
+    "bin/mcp.js",
+    "bin/postinstall.js",
     "README.md",
     "AI_INSTALL.md",
     "SKILL.md",
@@ -27,13 +29,6 @@
     "LICENSE",
     "config/docker-test.json"
   ],
-  "optionalDependencies": {
-    "@mejazbese21/db-cli-darwin-arm64": "1.1.1",
-    "@mejazbese21/db-cli-darwin-x64": "1.1.1",
-    "@mejazbese21/db-cli-linux-arm64": "1.1.1",
-    "@mejazbese21/db-cli-linux-x64": "1.1.1",
-    "@mejazbese21/db-cli-win32-x64": "1.1.1"
-  },
   "publishConfig": {
     "access": "public"
   },

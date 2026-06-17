@@ -30,30 +30,19 @@ function configPath() {
   );
 }
 
-// Resolve the native binary (platform sub-package, with repo/dev fallbacks).
+// Resolve the native binary (downloaded into bin/native by postinstall, with
+// local dev-build fallbacks).
 function nativeBinary() {
-  const byPlatform = {
-    "darwin-arm64": "@mejazbese21/db-cli-darwin-arm64",
-    "darwin-x64": "@mejazbese21/db-cli-darwin-x64",
-    "linux-x64": "@mejazbese21/db-cli-linux-x64",
-    "linux-arm64": "@mejazbese21/db-cli-linux-arm64",
-    "win32-x64": "@mejazbese21/db-cli-win32-x64"
-  };
-  const pkg = byPlatform[`${process.platform}-${process.arch}`];
   const exe =
     process.platform === "win32"
       ? "agent-database-cli.exe"
       : "agent-database-cli";
-  const here = dirname(fileURLToPath(import.meta.url));
-  const root = join(here, "..");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const candidates = [
-    // Scoped main package sits at node_modules/@mejazbese21/agent-database-cli, so the
-    // sibling platform package is two levels up from the package root, not one.
-    pkg && join(root, "..", "..", pkg, "bin", exe),
-    pkg && join(root, "node_modules", pkg, "bin", exe),
-    join(here, "..", "target", "release", exe),
-    join(here, "..", "target", "debug", exe)
-  ].filter(Boolean);
+    join(root, "bin", "native", exe),
+    join(root, "target", "release", exe),
+    join(root, "target", "debug", exe)
+  ];
   return candidates.find((c) => existsSync(c)) ?? null;
 }
 

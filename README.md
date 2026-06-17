@@ -10,7 +10,9 @@ npm install -g @mejazbese21/agent-database-cli
 agent-database-cli --help     # also available as: db-cli
 ```
 
-Requires Node >= 20. The matching native binary is installed automatically (macOS x64/arm64, Linux x64/arm64, Windows x64).
+Requires Node >= 20. On install, the matching native binary (macOS x64/arm64, Linux x64/arm64, Windows x64) is downloaded from [GitHub Releases](https://github.com/mohsingdp-ai/agent-database-cli/releases) into the package.
+
+Prefer no npm? Download the binary for your OS straight from the [Releases page](https://github.com/mohsingdp-ai/agent-database-cli/releases), put it on your `PATH`, and run it — it's self-contained.
 
 Update / uninstall:
 

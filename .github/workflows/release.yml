@@ -9,43 +9,28 @@ permissions:
   contents: write
 
 jobs:
-  build-binaries:
+  build:
     name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-            package: linux-x64
-            os: linux
-            cpu: x64
-            binary: agent-database-cli
+            ext: ""
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
-            package: linux-arm64
-            os: linux
-            cpu: arm64
-            binary: agent-database-cli
+            ext: ""
           - target: x86_64-apple-darwin
             runner: macos-14
-            package: darwin-x64
-            os: darwin
-            cpu: x64
-            binary: agent-database-cli
+            ext: ""
           - target: aarch64-apple-darwin
             runner: macos-14
-            package: darwin-arm64
-            os: darwin
-            cpu: arm64
-            binary: agent-database-cli
+            ext: ""
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
-            package: win32-x64
-            os: win32
-            cpu: x64
-            binary: agent-database-cli.exe
-    runs-on: ${{ matrix.runner }}
+            ext: ".exe"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,94 +53,18 @@ jobs:
       - name: Build binary
         run: cargo build --release --bin agent-database-cli --target ${{ matrix.target }}
 
-      - name: Stage binary package
+      - name: Stage release asset
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          PKG_DIR="packages/${{ matrix.package }}"
-          mkdir -p "$PKG_DIR/bin"
-          cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "$PKG_DIR/bin/${{ matrix.binary }}"
-          chmod +x "$PKG_DIR/bin/${{ matrix.binary }}" || true
-          sed \
-            -e "s#__NAME__#@mejazbese21/db-cli-${{ matrix.package }}#g" \
-            -e "s#__VERSION__#${VERSION}#g" \
-            -e "s#__TARGET__#${{ matrix.target }}#g" \
-            -e "s#__OS__#${{ matrix.os }}#g" \
-            -e "s#__CPU__#${{ matrix.cpu }}#g" \
-            npm/package-template.json > "$PKG_DIR/package.json"
+          SRC="target/${{ matrix.target }}/release/agent-database-cli${{ matrix.ext }}"
+          ASSET="agent-database-cli-${{ matrix.target }}${{ matrix.ext }}"
+          cp "$SRC" "$ASSET"
+          # postinstall.js downloads exactly this asset name from the release.
+          echo "staged $ASSET"
 
-      - name: Pack binary package
-        shell: bash
-        run: |
-          cd "packages/${{ matrix.package }}"
-          npm pack --pack-destination ../..
-
-      - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload binary to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: package-${{ matrix.package }}
-          path: "*.tgz"
-
-  release:
-    needs: build-binaries
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm install --omit=optional --package-lock=false --ignore-scripts --no-audit --no-fund
-
-      - name: Download binary packages
-        uses: actions/download-artifact@v4
-        with:
-          pattern: package-*
-          merge-multiple: true
-
-      - name: Pack main npm package
-        run: npm pack
-
-      - name: Create GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG_MESSAGE="$(git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/-----BEGIN PGP SIGNATURE-----/,$d' | sed '${/^$/d;}')"
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            EXISTING_NOTES="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json body --jq '.body // ""')"
-            if [ -n "${TAG_MESSAGE}" ] && ! grep -Fq "${TAG_MESSAGE}" <<<"${EXISTING_NOTES}"; then
-              {
-                printf '%s\n' "${EXISTING_NOTES}"
-                [ -n "${EXISTING_NOTES}" ] && printf '\n'
-                printf '%s\n' "${TAG_MESSAGE}"
-              } > release-notes.md
-              gh release edit "${GITHUB_REF_NAME}" \
-                ./*.tgz \
-                --repo "${GITHUB_REPOSITORY}" \
-                --notes-file release-notes.md
-            else
-              gh release edit "${GITHUB_REF_NAME}" \
-                ./*.tgz \
-                --repo "${GITHUB_REPOSITORY}"
-            fi
-          elif [ -n "${TAG_MESSAGE}" ]; then
-            printf '%s\n' "${TAG_MESSAGE}" > release-notes.md
-            gh release create "${GITHUB_REF_NAME}" \
-              ./*.tgz \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${GITHUB_REF_NAME}" \
-              --notes-file release-notes.md
-          else
-            gh release create "${GITHUB_REF_NAME}" \
-              ./*.tgz \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "${GITHUB_REF_NAME}" \
-              --generate-notes
-          fi
+          files: agent-database-cli-${{ matrix.target }}${{ matrix.ext }}
+          fail_on_unmatched_files: true

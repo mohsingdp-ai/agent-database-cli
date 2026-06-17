@@ -1,135 +1,113 @@
 #!/usr/bin/env node
-// Speed up CLI startup by removing Node.js from the launch hot path.
+// Download the platform-native binary from this version's GitHub Release into
+// bin/native/. The launcher (agent-database-cli.js) and the MCP server resolve
+// the binary from there. Binaries are NOT shipped inside the npm package — only
+// this tiny launcher is — so each install pulls just the one binary for its OS.
 //
-// The default `bin` entry (agent-database-cli.js) boots Node just to spawn the
-// native Rust binary — that Node startup costs ~150 ms on every invocation.
-// This postinstall rewrites the npm-generated launcher shims so they invoke the
-// native binary directly (no Node).
-//
-// It is intentionally defensive: if anything cannot be resolved it exits 0 and
-// leaves the working Node shim in place. So `--ignore-scripts` installs (where
-// this never runs) and unusual layouts keep working — just at the slower speed.
+// Requires network access at install time. If you install with --ignore-scripts
+// (so this never runs) or the download fails, the binary will be missing; build
+// from source with `cargo build --release` or drop the binary into bin/native/.
 import {
   existsSync,
-  readFileSync,
+  mkdirSync,
   writeFileSync,
-  chmodSync
+  chmodSync,
+  readFileSync
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const packageByPlatform = {
-  "darwin-arm64": "@mejazbese21/db-cli-darwin-arm64",
-  "darwin-x64": "@mejazbese21/db-cli-darwin-x64",
-  "linux-x64": "@mejazbese21/db-cli-linux-x64",
-  "linux-arm64": "@mejazbese21/db-cli-linux-arm64",
-  "win32-x64": "@mejazbese21/db-cli-win32-x64"
+// platform-arch -> Rust target triple (matches the names release.yml uploads).
+const targetByPlatform = {
+  "darwin-arm64": "aarch64-apple-darwin",
+  "darwin-x64": "x86_64-apple-darwin",
+  "linux-x64": "x86_64-unknown-linux-gnu",
+  "linux-arm64": "aarch64-unknown-linux-gnu",
+  "win32-x64": "x86_64-pc-windows-msvc"
 };
 
-// The native binary inside the platform sub-package is always named this.
-const NATIVE_NAME = "agent-database-cli";
-// Launcher command names to optimize (the `bin` entries that point at the Node
-// launcher). The `-mcp` bins are intentionally excluded: the MCP server is a
-// Node program and must keep its Node shim.
-const SHIM_NAMES = ["agent-database-cli", "db-cli"];
+const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const isWindows = process.platform === "win32";
+const exeName = isWindows ? "agent-database-cli.exe" : "agent-database-cli";
+const destDir = join(packageRoot, "bin", "native");
+const destPath = join(destDir, exeName);
 
 function log(message) {
   console.log(`[agent-database-cli postinstall] ${message}`);
 }
 
-function resolveNativeBinary() {
-  const key = `${process.platform}-${process.arch}`;
-  const packageName = packageByPlatform[key];
-  if (!packageName) return null;
-
-  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-  // Scoped main package (@mejazbese21/agent-database-cli) installs one level deeper,
-  // so node_modules is two levels up from the package root.
-  const installRoot = join(packageRoot, "..", "..");
-  const executableName =
-    process.platform === "win32" ? `${NATIVE_NAME}.exe` : NATIVE_NAME;
-
-  const candidates = [
-    join(installRoot, packageName, "bin", executableName),
-    join(packageRoot, "node_modules", packageName, "bin", executableName)
-  ];
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+function devBuildExists() {
+  return (
+    existsSync(join(packageRoot, "target", "release", exeName)) ||
+    existsSync(join(packageRoot, "target", "debug", exeName))
+  );
 }
 
-// Candidate directories where npm wrote the launcher shims for THIS install.
-// Derived strictly from this package's own location so a local install never
-// reaches out and rewrites another install's shims (e.g. a global one).
-// We deliberately do NOT use npm_config_prefix: it points at the global prefix
-// even during a local install, which would clobber the global shim.
-function shimDirectories(packageRoot) {
-  // Each path is one level deeper than the unscoped layout because the scoped main
-  // package lives at node_modules/@mejazbese21/agent-database-cli.
-  const dirs = [
-    join(packageRoot, "..", "..", ".bin"), // local: <tree>/node_modules/.bin
-    join(packageRoot, "..", "..", ".."), // global Windows: <prefix> (pkg at <prefix>/node_modules/@scope/<pkg>)
-    join(packageRoot, "..", "..", "..", "..", "bin") // global POSIX: <prefix>/bin (pkg at <prefix>/lib/node_modules/@scope/<pkg>)
-  ];
-  return [...new Set(dirs)].filter((dir) => existsSync(dir));
-}
-
-function shimContents(exe) {
-  return {
-    // POSIX / git-bash shell shim
-    "": `#!/bin/sh\nexec "${exe}" "$@"\n`,
-    // Windows cmd shim
-    ".cmd": `@ECHO off\r\n"${exe}" %*\r\n`,
-    // PowerShell shim
-    ".ps1": `#!/usr/bin/env pwsh\n& "${exe}" $args\nexit $LASTEXITCODE\n`
-  };
-}
-
-function rewriteShimsIn(dir, exe) {
-  let rewritten = 0;
-  const templates = shimContents(exe);
-  for (const name of SHIM_NAMES) {
-    for (const [ext, body] of Object.entries(templates)) {
-      const file = join(dir, `${name}${ext}`);
-      if (!existsSync(file)) continue;
-      try {
-        // Safety guard: only rewrite a file that is actually our launcher shim
-        // (npm's Node shim references our package launcher; our own rewrite
-        // references the native exe). Both contain "agent-database-cli", so this
-        // avoids touching anything unexpected.
-        const current = readFileSync(file, "utf8");
-        if (!current.includes(NATIVE_NAME)) continue;
-        if (current === body) continue; // already optimized; nothing to do
-        writeFileSync(file, body);
-        if (ext === "") chmodSync(file, 0o755);
-        rewritten += 1;
-      } catch {
-        // Leave the original shim in place on any failure.
-      }
-    }
+function repoBaseUrl(version) {
+  const pkg = JSON.parse(
+    readFileSync(join(packageRoot, "package.json"), "utf8")
+  );
+  const url = (pkg.repository?.url ?? "")
+    .replace(/^git\+/, "")
+    .replace(/\.git$/, "");
+  if (!/^https?:\/\/github\.com\//.test(url)) {
+    throw new Error(`cannot derive GitHub repo from repository.url: "${url}"`);
   }
-  return rewritten;
+  return `${url}/releases/download/v${version}/`;
 }
 
-function main() {
-  const exe = resolveNativeBinary();
-  if (!exe) {
-    log("native binary not found; keeping Node launcher (CLI still works).");
+async function download(url, outPath) {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} ${res.statusText} for ${url}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  writeFileSync(outPath, buf);
+  if (!isWindows) chmodSync(outPath, 0o755);
+  return buf.length;
+}
+
+async function main() {
+  if (process.env.AGENT_DATABASE_CLI_SKIP_DOWNLOAD) {
+    log("AGENT_DATABASE_CLI_SKIP_DOWNLOAD set; skipping binary download.");
     return;
   }
-  const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-  let total = 0;
-  for (const dir of shimDirectories(packageRoot)) {
-    total += rewriteShimsIn(dir, exe);
+  if (existsSync(destPath)) {
+    log("native binary already present; nothing to download.");
+    return;
   }
-  if (total > 0) {
-    log(`enabled Node-free fast launch (${total} shim(s) -> ${exe}).`);
-  } else {
-    log("no launcher shims found to optimize; keeping Node launcher.");
+  if (devBuildExists()) {
+    log("local cargo build found; using it, skipping download.");
+    return;
   }
+
+  const key = `${process.platform}-${process.arch}`;
+  const target = targetByPlatform[key];
+  if (!target) {
+    throw new Error(`unsupported platform: ${key}`);
+  }
+
+  const pkg = JSON.parse(
+    readFileSync(join(packageRoot, "package.json"), "utf8")
+  );
+  const asset = `agent-database-cli-${target}${isWindows ? ".exe" : ""}`;
+  const url = repoBaseUrl(pkg.version) + asset;
+
+  mkdirSync(destDir, { recursive: true });
+  log(`downloading ${asset} ...`);
+  const bytes = await download(url, destPath);
+  log(`installed native binary (${(bytes / 1e6).toFixed(1)} MB) -> ${destPath}`);
 }
 
-try {
-  main();
-} catch (error) {
-  // Never fail the install for a performance optimization.
-  log(`skipped (${error?.message ?? error}); CLI still works via Node launcher.`);
-}
+main().catch((error) => {
+  console.error(
+    `[agent-database-cli postinstall] failed to install native binary: ${
+      error?.message ?? error
+    }`
+  );
+  console.error(
+    "The CLI will not run until the binary is available. Re-run the install with " +
+      "network access, or build from source with `cargo build --release`."
+  );
+  process.exit(1);
+});

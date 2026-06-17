@@ -33,11 +33,11 @@ function configPath() {
 // Resolve the native binary (platform sub-package, with repo/dev fallbacks).
 function nativeBinary() {
   const byPlatform = {
-    "darwin-arm64": "@agent-database-cli/darwin-arm64",
-    "darwin-x64": "@agent-database-cli/darwin-x64",
-    "linux-x64": "@agent-database-cli/linux-x64",
-    "linux-arm64": "@agent-database-cli/linux-arm64",
-    "win32-x64": "@agent-database-cli/win32-x64"
+    "darwin-arm64": "@mejazbese21/db-cli-darwin-arm64",
+    "darwin-x64": "@mejazbese21/db-cli-darwin-x64",
+    "linux-x64": "@mejazbese21/db-cli-linux-x64",
+    "linux-arm64": "@mejazbese21/db-cli-linux-arm64",
+    "win32-x64": "@mejazbese21/db-cli-win32-x64"
   };
   const pkg = byPlatform[`${process.platform}-${process.arch}`];
   const exe =
@@ -47,7 +47,9 @@ function nativeBinary() {
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, "..");
   const candidates = [
-    pkg && join(root, "..", pkg, "bin", exe),
+    // Scoped main package sits at node_modules/@mejazbese21/agent-database-cli, so the
+    // sibling platform package is two levels up from the package root, not one.
+    pkg && join(root, "..", "..", pkg, "bin", exe),
     pkg && join(root, "node_modules", pkg, "bin", exe),
     join(here, "..", "target", "release", exe),
     join(here, "..", "target", "debug", exe)
@@ -203,7 +205,7 @@ async function handleTool(name, args) {
 // Wire up the MCP server
 // ---------------------------------------------------------------------------
 const server = new Server(
-  { name: "agent-database-cli", version: "0.2.22" },
+  { name: "agent-database-cli", version: "1.1.0" },
   { capabilities: { tools: {} } }
 );
 

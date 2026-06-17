@@ -19,11 +19,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageByPlatform = {
-  "darwin-arm64": "@agent-database-cli/darwin-arm64",
-  "darwin-x64": "@agent-database-cli/darwin-x64",
-  "linux-x64": "@agent-database-cli/linux-x64",
-  "linux-arm64": "@agent-database-cli/linux-arm64",
-  "win32-x64": "@agent-database-cli/win32-x64"
+  "darwin-arm64": "@mejazbese21/db-cli-darwin-arm64",
+  "darwin-x64": "@mejazbese21/db-cli-darwin-x64",
+  "linux-x64": "@mejazbese21/db-cli-linux-x64",
+  "linux-arm64": "@mejazbese21/db-cli-linux-arm64",
+  "win32-x64": "@mejazbese21/db-cli-win32-x64"
 };
 
 // The native binary inside the platform sub-package is always named this.
@@ -43,7 +43,9 @@ function resolveNativeBinary() {
   if (!packageName) return null;
 
   const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-  const installRoot = join(packageRoot, "..");
+  // Scoped main package (@mejazbese21/agent-database-cli) installs one level deeper,
+  // so node_modules is two levels up from the package root.
+  const installRoot = join(packageRoot, "..", "..");
   const executableName =
     process.platform === "win32" ? `${NATIVE_NAME}.exe` : NATIVE_NAME;
 
@@ -60,10 +62,12 @@ function resolveNativeBinary() {
 // We deliberately do NOT use npm_config_prefix: it points at the global prefix
 // even during a local install, which would clobber the global shim.
 function shimDirectories(packageRoot) {
+  // Each path is one level deeper than the unscoped layout because the scoped main
+  // package lives at node_modules/@mejazbese21/agent-database-cli.
   const dirs = [
-    join(packageRoot, "..", ".bin"), // local: <tree>/node_modules/.bin
-    join(packageRoot, "..", ".."), // global Windows: <prefix> (pkg at <prefix>/node_modules/<pkg>)
-    join(packageRoot, "..", "..", "..", "bin") // global POSIX: <prefix>/bin (pkg at <prefix>/lib/node_modules/<pkg>)
+    join(packageRoot, "..", "..", ".bin"), // local: <tree>/node_modules/.bin
+    join(packageRoot, "..", "..", ".."), // global Windows: <prefix> (pkg at <prefix>/node_modules/@scope/<pkg>)
+    join(packageRoot, "..", "..", "..", "..", "bin") // global POSIX: <prefix>/bin (pkg at <prefix>/lib/node_modules/@scope/<pkg>)
   ];
   return [...new Set(dirs)].filter((dir) => existsSync(dir));
 }

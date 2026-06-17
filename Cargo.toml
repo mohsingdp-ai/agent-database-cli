@@ -1,6 +1,6 @@
 [package]
 name = "agent-database-cli"
-version = "0.2.22"
+version = "1.1.0"
 edition = "2021"
 license = "MIT"
 description = "Unified database CLI with read-only mode and a command blocklist; each command opens a direct connection."

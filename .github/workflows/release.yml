@@ -78,7 +78,7 @@ jobs:
           cp "target/${{ matrix.target }}/release/${{ matrix.binary }}" "$PKG_DIR/bin/${{ matrix.binary }}"
           chmod +x "$PKG_DIR/bin/${{ matrix.binary }}" || true
           sed \
-            -e "s#__NAME__#@agent-database-cli/${{ matrix.package }}#g" \
+            -e "s#__NAME__#@mejazbese21/db-cli-${{ matrix.package }}#g" \
             -e "s#__VERSION__#${VERSION}#g" \
             -e "s#__TARGET__#${{ matrix.target }}#g" \
             -e "s#__OS__#${{ matrix.os }}#g" \

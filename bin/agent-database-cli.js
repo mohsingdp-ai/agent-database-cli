@@ -5,11 +5,11 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const packageByPlatform = {
-  "darwin-arm64": "@agent-database-cli/darwin-arm64",
-  "darwin-x64": "@agent-database-cli/darwin-x64",
-  "linux-x64": "@agent-database-cli/linux-x64",
-  "linux-arm64": "@agent-database-cli/linux-arm64",
-  "win32-x64": "@agent-database-cli/win32-x64"
+  "darwin-arm64": "@mejazbese21/db-cli-darwin-arm64",
+  "darwin-x64": "@mejazbese21/db-cli-darwin-x64",
+  "linux-x64": "@mejazbese21/db-cli-linux-x64",
+  "linux-arm64": "@mejazbese21/db-cli-linux-arm64",
+  "win32-x64": "@mejazbese21/db-cli-win32-x64"
 };
 
 const key = `${process.platform}-${process.arch}`;
@@ -22,10 +22,14 @@ if (!packageName) {
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const executableName = process.platform === "win32" ? "agent-database-cli.exe" : "agent-database-cli";
 const packageRoot = join(currentDir, "..");
-const installRoot = join(packageRoot, "..");
+// The main package is scoped (@mejazbese21/agent-database-cli), so it installs one
+// level deeper than an unscoped package: node_modules/@mejazbese21/agent-database-cli.
+// installRoot must therefore be node_modules itself (two levels up) so that joining
+// the already-scoped platform package name lands at node_modules/@mejazbese21/db-cli-*.
+const installRoot = join(packageRoot, "..", "..");
 
 const candidateExecutablePaths = [
-  // On a normal npm install, the platform sub-package sits alongside the main package under node_modules/@agent-database-cli/*.
+  // On a normal npm install, the platform sub-package sits alongside the main package under node_modules/@mejazbese21/*.
   join(installRoot, packageName, "bin", executableName),
   // Handle the rare package managers that nest optionalDependencies inside the main package's node_modules.
   join(packageRoot, "node_modules", packageName, "bin", executableName)

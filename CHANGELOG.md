@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
+- Packaging: the npm distribution now publishes under the `@mejazbese21` scope. Install with `npm install -g @mejazbese21/agent-database-cli`; the platform binaries are published as `@mejazbese21/db-cli-<platform>`. The CLI command names (`agent-database-cli`, `db-cli`) are unchanged.
 - New feature: PostgreSQL connections now support TLS. The adapter previously connected with `NoTls` only and could not reach servers that require SSL (e.g. AWS RDS, which rejected the plaintext attempt with `no pg_hba.conf entry ... no encryption`). TLS behavior follows the URL's `sslmode` query parameter: `disable` (plaintext), `prefer`/`require` (encrypt without verifying the server certificate — the default when `sslmode` is omitted is `prefer`), and `verify-ca`/`verify-full` (encrypt and verify against the bundled public CA roots). Note: managed databases that present a private CA (such as RDS's own CA) will fail `verify-full` against public roots; use `require` for those.
 - Breaking: removed the local connection daemon. Every command now opens a direct connection, runs, and disconnects. Removed the `daemon` subcommand, the `reset` subcommand (it only dropped a pooled connection), and the now-unused `keepAliveSeconds` config field (existing configs that still set it are ignored). The `repl` subcommand keeps its speed by reusing a single connection for the whole stdin stream, and the MCP server now invokes the CLI binary directly instead of talking to a daemon socket.
 - Bugfix: PostgreSQL results now serialize `numeric` (as a precision-preserving string), `date`/`time`/`timestamp`/`timestamptz`, `uuid`, `json`/`jsonb`, `int2`/`float4`, and enum / user-defined text types. These previously came back as the literal string `<unsupported>`.

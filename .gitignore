@@ -6,3 +6,6 @@ coverage/
 .DS_Store
 
 target/
+
+# npm platform-binary staging (built in CI / locally before publish)
+/packages/

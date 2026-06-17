@@ -5,14 +5,14 @@ When using this tool, first install the CLI and skill by following the steps bel
 ## 1. Install the CLI
 
 ```bash
-npm install -g agent-database-cli
+npm install -g @mejazbese21/agent-database-cli
 agent-database-cli --help
 ```
 
 If installing the npm package is restricted, use the equivalent source-based installation:
 
 ```powershell
-git clone https://github.com/sleepinginsummer/agent-database-cli.git
+git clone https://github.com/mohsingdp-ai/agent-database-cli.git
 cd agent-database-cli
 npm install
 npm run build
@@ -41,7 +41,7 @@ Then create and edit:
 ~/.agent-database-cli/config.json
 ```
 
-For the configuration content, refer to `https://github.com/sleepinginsummer/agent-database-cli/blob/main/config/docker-test.json` in the project. The configuration file stores real database connection information, so do not make it public. You can ask the user how to configure the database connections, or tell the user where the configuration directory is.
+For the configuration content, refer to `https://github.com/mohsingdp-ai/agent-database-cli/blob/main/config/docker-test.json` in the project. The configuration file stores real database connection information, so do not make it public. You can ask the user how to configure the database connections, or tell the user where the configuration directory is.
 
 ## 3. Install the Skill
 
@@ -63,7 +63,7 @@ The main installation directory is `~/.agents/skills/agent-database-cli`. Symlin
 ## 4. Update
 
 ```bash
-npm install -g agent-database-cli@latest
+npm install -g @mejazbese21/agent-database-cli@latest
 ```
 ## 5. Verification Test
 After configuration is complete, run a test:

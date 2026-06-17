@@ -98,7 +98,7 @@ The configuration file is a JSON object whose root field is `databases`:
 Fields:
 
 - `type`: `mysql`, `postgres`, `redis`, `oracle`, `mongodb`
-- `url`: database connection URL
+- `url`: database connection URL. For PostgreSQL, an optional `sslmode` query parameter controls TLS: omitted/`prefer` (try TLS, no cert verification, fall back to plaintext), `require` (must encrypt, no verification), `verify-ca`/`verify-full` (encrypt + verify against public CA roots), `disable` (plaintext). SSL-required servers such as AWS RDS work with the default; for RDS's private CA use `require` rather than `verify-full`
 - `passwordRef`: local encrypted reference for the database URL password; generated automatically the first time a plaintext URL password is used
 - `database`: default MongoDB database name, optional
 - `readonly`: whether to enable read-only mode

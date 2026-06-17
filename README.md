@@ -149,7 +149,7 @@ AGENT_DATABASE_CLI_CONFIG=/path/to/config.json agent-database-cli list
 The configuration file is an object. Each key under `databases` is a database connection name:
 
 - `type`: Database type, supports `mysql`, `postgres`, `redis`, `oracle`, and `mongodb`
-- `url`: Database connection URL. In Redis standalone mode it is the direct target. In Redis cluster mode it is used as the entry node URL
+- `url`: Database connection URL. In Redis standalone mode it is the direct target. In Redis cluster mode it is used as the entry node URL. For PostgreSQL, an optional `sslmode` query parameter controls TLS (see below)
 - `redisCluster`: Optional Redis cluster configuration. When configured, cluster mode is used
 - `sshTunnel`: Optional SSH tunnel configuration. In standalone mode, the database URL host and port are forwarded through SSH. In Redis cluster mode, a local forwarding port is created for each configured cluster node
 - `database`: Optional default MongoDB database name
@@ -158,6 +158,17 @@ The configuration file is an object. Each key under `databases` is a database co
 - `oracleDriver`: Oracle driver, supports `sqlcl`, `oracle`, or `oracledb`; defaults to `sqlcl` when omitted
 - `sqlclPath`: SQLcl executable path, used only when `oracleDriver` is `sqlcl`
 - `javaHome`: Optional `JAVA_HOME` used by SQLcl
+
+### PostgreSQL TLS (`sslmode`)
+
+PostgreSQL connections negotiate TLS based on the `sslmode` query parameter in the `url`:
+
+- omitted / `prefer`: try TLS, fall back to plaintext, do not verify the server certificate (works for both local non-TLS Postgres and SSL-required servers)
+- `require`: must encrypt; do not verify the server certificate
+- `verify-ca` / `verify-full`: must encrypt and verify the server certificate against the bundled public CA roots
+- `disable`: plaintext only
+
+Managed databases that require SSL (e.g. AWS RDS) work with the default. If such a service presents a **private** CA (RDS does), `verify-full` fails against public roots — use `require` for those. Example: `postgres://user@host:5432/db?sslmode=require`.
 
 `redisCluster` currently supports:
 

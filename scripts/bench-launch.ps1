@@ -51,24 +51,20 @@ $sorted = $samples | Sort-Object
 $median = $sorted[[int]([math]::Floor($sorted.Count / 2))]
 Write-Host ("exec one-off ms  min={0} median={1} max={2}  (n={3})" -f $sorted[0], $median, $sorted[-1], $Iter)
 
-# --- repl marginal per-statement latency ---
-# Compare two batch sizes so the one-time setup (spawn + connect) cancels out:
-#   marginal = (total_large - total_small) / (n_large - n_small)
-function Repl-Total([int]$n) {
-  $lines = (1..$n | ForEach-Object { "select 1" }) -join "`n"
-  $best = [double]::MaxValue
-  for ($r = 0; $r -lt 3; $r++) {
-    $t = (Measure-Command { $lines | Invoke-Cli @("repl", "--db", $Conn) | Out-Null }).TotalMilliseconds
-    if ($t -lt $best) { $best = $t }
-  }
-  return $best
+# --- repl per-statement latency ---
+# Feed a large batch through one process and divide total by N. At this size the
+# one-time setup (spawn + connect, ~one exec) amortizes to near zero per
+# statement, so total/N is a stable per-statement figure. (Differencing two
+# small batches is NOT used: at sub-millisecond/stmt the Measure-Command jitter
+# swamps the difference and can even go negative.)
+$n = 2000
+$lines = (1..$n | ForEach-Object { "select 1" }) -join "`n"
+$best = [double]::MaxValue
+for ($r = 0; $r -lt 3; $r++) {
+  $t = (Measure-Command { $lines | Invoke-Cli @("repl", "--db", $Conn) | Out-Null }).TotalMilliseconds
+  if ($t -lt $best) { $best = $t }
 }
-$small = 50
-$large = 250
-$tSmall = Repl-Total $small
-$tLarge = Repl-Total $large
-$marginal = [math]::Round(($tLarge - $tSmall) / ($large - $small), 2)
-$setup = [math]::Round($tSmall - $small * $marginal)
-Write-Host ("repl setup ms ~={0}  marginal/stmt ms ~={1}  (n={2} vs {3})" -f $setup, $marginal, $small, $large)
+$perStmt = [math]::Round($best / $n, 3)
+Write-Host ("repl per-stmt ms ~={0}  (batch of {1}, incl. amortized setup)" -f $perStmt, $n)
 
 if (-not $ok) { exit 1 }

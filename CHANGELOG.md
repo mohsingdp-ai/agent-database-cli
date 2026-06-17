@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.1
+
+- Docs: trimmed the README to a short, scannable version (install, usage, config, permissions, MCP). No code changes.
+
 ## 1.1.0
 
 - Packaging: the npm distribution now publishes under the `@mejazbese21` scope. Install with `npm install -g @mejazbese21/agent-database-cli`; the platform binaries are published as `@mejazbese21/db-cli-<platform>`. The CLI command names (`agent-database-cli`, `db-cli`) are unchanged.

@@ -194,7 +194,7 @@ async function handleTool(name, args) {
 // Wire up the MCP server
 // ---------------------------------------------------------------------------
 const server = new Server(
-  { name: "agent-database-cli", version: "1.1.1" },
+  { name: "agent-database-cli", version: "1.3.0" },
   { capabilities: { tools: {} } }
 );
 
@@ -203,7 +203,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   try {
     const result = await handleTool(req.params.name, req.params.arguments || {});
-    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    return { content: [{ type: "text", text: JSON.stringify(result) }] };
   } catch (error) {
     return {
       content: [{ type: "text", text: `Error: ${error?.message ?? error}` }],

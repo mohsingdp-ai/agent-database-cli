@@ -17,6 +17,7 @@ pub enum DatabaseType {
 pub enum OutputFormat {
     Json,
     Table,
+    Compact,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

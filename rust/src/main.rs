@@ -30,8 +30,8 @@ For many queries, stream statements into `repl` (one reused connection), or run 
 read-only by default."
 )]
 struct Cli {
-    #[arg(long, default_value = "json", value_parser = ["json", "table"], help = "Output format")]
-    format: String,
+    #[arg(long, value_parser = ["json", "table", "compact"], help = "Output format (default: compact for exec/meta, json otherwise)")]
+    format: Option<String>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -106,7 +106,10 @@ async fn main() {
 
 async fn run() -> Result<()> {
     let cli = Cli::parse();
-    let format = parse_output_format(&cli.format)?;
+    let format = match &cli.format {
+        Some(value) => parse_output_format(value)?,
+        None => default_format_for(&cli.command),
+    };
     let data = match cli.command {
         Commands::List => runtime::run_list().await?,
         Commands::Test { db } => runtime::run_test(&db).await?,
@@ -137,10 +140,22 @@ async fn run() -> Result<()> {
     Ok(())
 }
 
+/// Default output format when `--format` is not given. Row-producing commands
+/// (`exec`, `meta`) default to the token-efficient `compact` form; structural
+/// commands keep their natural JSON object so outputs like `{"ok":true}` aren't
+/// coerced into a `fields`/`rows` envelope.
+fn default_format_for(command: &Commands) -> OutputFormat {
+    match command {
+        Commands::Execute { .. } | Commands::Metadata { .. } => OutputFormat::Compact,
+        _ => OutputFormat::Json,
+    }
+}
+
 fn parse_output_format(value: &str) -> Result<OutputFormat> {
     match value {
         "json" => Ok(OutputFormat::Json),
         "table" => Ok(OutputFormat::Table),
+        "compact" => Ok(OutputFormat::Compact),
         other => anyhow::bail!("unsupported output format: {other}"),
     }
 }

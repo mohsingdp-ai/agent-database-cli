@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0
+
+- New output format: `compact` — single-line, minified JSON that lists column names once in `fields` and renders each row as a positional array (e.g. `{"fields":["id","name"],"rows":[[1,"Alice"]],"rowCount":2}`). Far fewer tokens than the pretty `json` form while staying valid, parseable JSON that preserves number/string/null types, escaping, and nested `jsonb` objects (unlike `table`, which flattens everything to strings).
+- Default format is now per-command: `compact` for row-producing commands (`exec`, `meta`) and `json` for structural commands (`list`, `test`, `install-skill`), so outputs like `{"ok":true}` are not coerced into a `fields`/`rows` envelope. An explicit `--format` always overrides.
+- MCP server now emits minified JSON for tool results (was pretty-printed), so the compact savings survive over the wire.
+- Fix: restore `shell-words` to `1.1.1` in `Cargo.lock` (the 1.2.0 sync had bumped it to a version that does not exist on crates.io, which blocked all builds).
+
 ## 1.2.0
 
 - Distribution: binaries now ship via **GitHub Releases**, and npm publishes a single launcher package (`@mejazbese21/agent-database-cli`) instead of per-platform npm sub-packages. On install, `postinstall` downloads the binary for your OS/arch from the release matching the package version into `bin/native/`. Requires network access at install time; `--ignore-scripts` installs need the binary built (`cargo build --release`) or placed manually. You can also just download the raw binary for your platform from the Releases page and run it — no npm needed.

@@ -113,7 +113,7 @@ The first time a connection is used, the CLI encrypts the plaintext database URL
 
 ## Global Parameters
 
-- `--format <format>`: output format, supports `json` or `table`, default `json`
+- `--format <format>`: output format, supports `compact`, `json`, or `table`. Default is `compact` for row-producing commands (`exec`, `meta`) and `json` for structural commands (`list`, `test`, `install-skill`). `compact` is single-line JSON with column names listed once in `fields` and each row as a positional array (most token-efficient); `json` is pretty-printed with keys repeated per row; `table` is a padded text table for human reading.
 - `--help`, `-h`: print help
 - `--version`, `-V`: print version
 
